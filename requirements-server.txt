@@ -1,0 +1,7 @@
+fastapi==0.115.8
+uvicorn[standard]==0.34.0
+websockets==14.2
+pydantic==2.10.6
+
+# Предпросмотр/рендер (capcut_ui + studio worker). MoviePy 2.x убрал moviepy.editor — держим v1.
+moviepy==1.0.3

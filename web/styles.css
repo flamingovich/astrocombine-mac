@@ -1,0 +1,2250 @@
+/* CapCut-inspired shell (dark + teal). Логика превью не меняется — только внешний вид и сетка. */
+
+:root {
+  color-scheme: dark;
+  --cc-preview-stack-scale: 1;
+  --cc-bg: #121212;
+  --cc-panel: #1a1a1a;
+  --cc-panel2: #222222;
+  --cc-border: #2c2c2c;
+  --cc-border2: #3a3a3a;
+  --cc-text: #f3f3f3;
+  --cc-muted: #9a9a9a;
+  --cc-teal: #00c1b4;
+  --cc-teal-dim: #009688;
+  --cc-teal-glow: rgba(0, 193, 180, 0.35);
+  --cc-radius: 8px;
+  --cc-radius-sm: 6px;
+  --cc-tl-zoom: 3;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--cc-bg);
+  color: var(--cc-text);
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+}
+
+.theme-capcut {
+  height: 100%;
+}
+
+.ccApp {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ----- Top bar (как CapCut) ----- */
+.ccTopBar {
+  flex-shrink: 0;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: linear-gradient(180deg, #1e1e1e, #181818);
+  border-bottom: 1px solid var(--cc-border);
+  gap: 12px;
+}
+
+.ccTopBar__left,
+.ccTopBar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.ccTopBar__right {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 4px;
+}
+
+.ccTopBar__right .ccBtn--ghost {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.ccTopBar__center {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.ccLogoMark {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--cc-teal), #0d6b63);
+  box-shadow: 0 0 12px var(--cc-teal-glow);
+}
+
+.ccBrand {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.ccProjectTitle {
+  width: min(420px, 50vw);
+  text-align: center;
+  background: #141414;
+  border: 1px solid var(--cc-border);
+  border-radius: 999px;
+  color: var(--cc-text);
+  padding: 6px 16px;
+  font-size: 13px;
+  outline: none;
+}
+
+.ccProjectTitle:focus {
+  border-color: var(--cc-teal);
+  box-shadow: 0 0 0 1px var(--cc-teal-glow);
+}
+
+.ccIconBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--cc-text);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ccIconBtn:hover {
+  background: #2a2a2a;
+  border-color: var(--cc-border);
+}
+
+.ccBtn {
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid var(--cc-border);
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #2a2a2a;
+  color: var(--cc-text);
+}
+
+.ccBtn:hover {
+  filter: brightness(1.08);
+}
+
+.ccBtn--ghost {
+  background: transparent;
+  color: var(--cc-muted);
+  border-color: var(--cc-border2);
+}
+
+.ccBtn--ghost:hover {
+  color: var(--cc-text);
+  background: #252525;
+}
+
+.ccBtn--teal {
+  background: linear-gradient(180deg, #00cfc2, var(--cc-teal-dim));
+  border-color: #007f76;
+  color: #041010;
+  font-weight: 700;
+}
+
+.ccBtn--secondary {
+  background: #2e2e2e;
+  border-color: #444;
+}
+
+.ccBtn--grow {
+  flex: 1;
+}
+
+.ccBanner {
+  display: none;
+  flex-shrink: 0;
+  margin: 6px 10px 0;
+  padding: 6px 10px;
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid #6b4f1a;
+  background: #2a2210;
+  color: #fde68a;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ccBanner.show {
+  display: block;
+}
+
+/* ----- Workspace: три колонки (как на референсе) ----- */
+.ccWorkspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns:
+    minmax(220px, 0.85fr)
+    minmax(260px, 1.4fr)
+    minmax(280px, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "scene preview params";
+  gap: 1px;
+  padding: 1px 1px 0;
+  background: var(--cc-border);
+}
+
+#colScene {
+  grid-area: scene;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#colPreview {
+  grid-area: preview;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#colParams {
+  grid-area: params;
+  overflow: hidden;
+  min-height: 0;
+}
+
+@media (max-width: 1280px) {
+  .ccWorkspace {
+    grid-template-columns: minmax(200px, 1fr) minmax(240px, 1.2fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "scene preview"
+      "params params";
+  }
+
+  .ccAppTimelineRow {
+    grid-template-columns: 1fr;
+  }
+
+  .ccTimelinePad {
+    display: none;
+  }
+
+  #timelineDock.ccTimeline--wide {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 800px) {
+  .ccWorkspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1.1fr) minmax(0, 0.75fr) minmax(0, 1.1fr);
+    grid-template-areas:
+      "preview"
+      "scene"
+      "params";
+  }
+
+  .ccAppTimelineRow {
+    grid-template-columns: 1fr;
+  }
+
+  .ccTimelinePad {
+    display: none;
+  }
+
+  #timelineDock.ccTimeline--wide {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Нижняя строка: под колонкой «Медиа» пусто, таймлайн под превью + свойства */
+.ccAppTimelineRow {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns:
+    minmax(220px, 0.85fr)
+    minmax(260px, 1.4fr)
+    minmax(280px, 1fr);
+  gap: 1px;
+  padding: 0 1px 1px;
+  background: var(--cc-border);
+}
+
+.ccTimelinePad {
+  grid-column: 1;
+  grid-row: 1;
+  background: var(--cc-bg);
+  min-height: 8px;
+}
+
+#timelineDock.ccTimeline--wide {
+  grid-column: 2 / -1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ccDock {
+  background: var(--cc-panel);
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ccDock--left {
+  border-right: 1px solid var(--cc-border);
+}
+
+.ccDock--center {
+  border-left: 1px solid var(--cc-border);
+  border-right: 1px solid var(--cc-border);
+  margin-left: -1px;
+  margin-right: -1px;
+}
+
+.ccDock--right {
+  border-left: 1px solid var(--cc-border);
+}
+
+.ccDockHead,
+.ccPreviewHead,
+.ccPropsHead {
+  flex-shrink: 0;
+  padding: 8px 10px 5px;
+  border-bottom: 1px solid var(--cc-border);
+  background: linear-gradient(180deg, #202020, #1a1a1a);
+}
+
+.ccPropsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ccPropsApplyAll {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.ccDockTitle,
+.ccPreviewTitle,
+.ccPropsTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #bdbdbd;
+}
+
+.ccDockHint {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--cc-muted);
+}
+
+.ccDockBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+}
+
+.ccDockStack {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ccDockStack > .ccMediaPane {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* Панель в стеке: высота задаётся самой панелью (см. .ccElementPanel), здесь только не сжимать в ноль */
+.ccDockStack > .ccElementPanel {
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ccOverlaysList {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ccOverlayRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px;
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid var(--cc-border);
+  background: #1a1a1a;
+}
+
+.ccOverlayRow__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.ccOverlayRow__btn {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.ccMediaStrip {
+  flex: 0 0 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 6px;
+  background: #141414;
+  border-right: 1px solid var(--cc-border);
+}
+
+.ccMediaTab {
+  height: 40px;
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--cc-muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.ccMediaTab:hover:not(:disabled) {
+  background: #252525;
+  color: var(--cc-text);
+}
+
+.ccMediaTab.is-active {
+  background: #2a2a2a;
+  border-color: var(--cc-teal);
+  color: var(--cc-teal);
+}
+
+.ccMediaTab:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.ccMediaPane {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+#bio {
+  min-height: 64px;
+  max-height: 11rem;
+  resize: none;
+  overflow-y: auto;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--cc-muted);
+  line-height: 1.35;
+  margin-bottom: 8px;
+}
+
+.field {
+  margin-bottom: 10px;
+}
+
+.field label {
+  display: block;
+  font-size: 11px;
+  color: var(--cc-muted);
+  margin-bottom: 4px;
+}
+
+.ccInput,
+.ccTextarea,
+select.ccInput {
+  width: 100%;
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid var(--cc-border2);
+  background: #141414;
+  color: var(--cc-text);
+  padding: 8px 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+.ccInput:focus,
+.ccTextarea:focus,
+select.ccInput:focus {
+  border-color: var(--cc-teal);
+  box-shadow: 0 0 0 1px var(--cc-teal-glow);
+}
+
+.ccTextarea {
+  min-height: 72px;
+  resize: none;
+  line-height: 1.45;
+}
+
+.ccTextarea--code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+}
+
+.ccInput--num {
+  width: 72px;
+  text-align: center;
+}
+
+/* Движение фото: select + кнопка «Случайная анимация» */
+.ccPhotoAnimKindRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.ccPhotoAnimKindRow > select.ccInput {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.ccPhotoAnimKindRow .ccPhotoAnimRandomBtn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.ccBtnRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ----- Color fields (сцена / вотермарка) ----- */
+.ccColorFieldWrap .ccColorField {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ccColorNative {
+  width: 44px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--cc-border2);
+  border-radius: 8px;
+  background: #0d0d0d;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ccColorNative--sm {
+  width: 38px;
+  height: 32px;
+}
+
+.ccColorNative::-webkit-color-swatch-wrapper {
+  padding: 3px;
+}
+
+.ccColorNative::-webkit-color-swatch {
+  border-radius: 5px;
+  border: none;
+}
+
+.ccColorSwatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.ccColorFieldWrap .ccColorHex {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ccGradientRow {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.ccGradientLab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--cc-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ccGradientLab input {
+  cursor: pointer;
+  accent-color: var(--cc-teal);
+}
+
+/* ----- Center preview ----- */
+.ccPreviewHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ccPreviewHeadTools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ccPreviewScaleCtl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--cc-muted);
+  user-select: none;
+}
+
+.ccPreviewScaleCtl__lab {
+  white-space: nowrap;
+}
+
+.ccPreviewScaleCtl input[type="range"] {
+  width: 100px;
+  accent-color: var(--cc-teal);
+}
+
+.ccPreviewScaleCtl__val {
+  font-variant-numeric: tabular-nums;
+  color: var(--cc-teal);
+  min-width: 38px;
+}
+
+.ccPreviewBadge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--cc-teal);
+  border: 1px solid #0f5c56;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #0f1f1d;
+}
+
+.ccPreviewShortsCtl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--cc-muted);
+  user-select: none;
+  cursor: pointer;
+}
+
+.ccPreviewShortsCtl input {
+  accent-color: var(--cc-teal);
+  cursor: pointer;
+}
+
+.ccPreviewFrame {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 6px;
+}
+
+.ccPreviewMon {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  background: #0a0a0a;
+  border-radius: var(--cc-radius);
+  border: 1px solid #1a1a1a;
+  position: relative;
+  overflow: hidden;
+  /* Размеры контейнера для cqw/cqh — вписываем 9:16 без вылезания за пределы */
+  container-type: size;
+  container-name: preview-mon;
+}
+
+.ccPreviewStack {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--cc-preview-stack-scale, 1));
+  box-sizing: border-box;
+  aspect-ratio: 9 / 16;
+  width: min(100cqw, calc(100cqh * 9 / 16));
+  max-width: 100%;
+  max-height: 100cqh;
+  line-height: 0;
+}
+
+/* Макет как на телефоне: область ролика 1181×2320, нижняя панель 1181×235 (оверлей PNG) */
+.ccPreviewStack.ccPreviewStack--shorts {
+  aspect-ratio: 1181 / 2555;
+  width: min(100cqw, calc(100cqh * 1181 / 2555));
+  max-height: 100cqh;
+}
+
+.ccPreviewMediaSlot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 2px;
+}
+
+.ccPreviewStack.ccPreviewStack--shorts .ccPreviewMediaSlot {
+  /* 2320 / (2320 + 235) — только зона видео, без нижней навигации */
+  height: calc(100% * 2320 / 2555);
+  border-radius: 0;
+}
+
+.ccPreviewShortsChrome {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ccPreviewLoading {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  pointer-events: none;
+  background: radial-gradient(ellipse 80% 70% at 50% 45%, rgba(20, 42, 40, 0.95), rgba(6, 8, 8, 0.98));
+  border-radius: inherit;
+}
+
+.ccPreviewLoading.is-visible {
+  display: flex;
+}
+
+.ccPreviewLoading__rings {
+  position: relative;
+  width: 52px;
+  height: 52px;
+}
+
+.ccPreviewLoading__rings span {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--cc-teal);
+  border-right-color: rgba(0, 193, 180, 0.25);
+  animation: ccPreviewSpin 0.9s linear infinite;
+}
+
+.ccPreviewLoading__rings span:last-child {
+  inset: 8px;
+  border-top-color: rgba(0, 193, 180, 0.45);
+  animation-duration: 1.25s;
+  animation-direction: reverse;
+}
+
+@keyframes ccPreviewSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ccPreviewLoading__text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #c8e8e4;
+  text-transform: uppercase;
+}
+
+.ccPreviewMediaSlot .ccPreviewImg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  border-radius: inherit;
+}
+
+.ccPreviewStack.ccPreviewStack--shorts .ccPreviewMediaSlot .ccPreviewImg {
+  /* Как object-fit: cover — ровное масштабирование, без чёрных полей, лишнее обрезается */
+  object-fit: cover;
+  object-position: center;
+}
+
+.ccPreviewOverlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* Без container query units — вписывание 9:16 в доступный прямоугольник */
+@supports not (width: 1cqw) {
+  .ccPreviewMon {
+    container-type: normal;
+  }
+
+  .ccPreviewStack {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 9 / 16;
+    inset: 0;
+    margin: auto;
+    transform: scale(var(--cc-preview-stack-scale, 1));
+  }
+
+  .ccPreviewStack.ccPreviewStack--shorts {
+    aspect-ratio: 1181 / 2555;
+  }
+}
+
+.ccPreviewTimeOverlay {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 3;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #eee;
+}
+
+.ccPreviewTransport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 2px 0 0;
+  flex-shrink: 0;
+}
+
+.ccPlayBtn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid var(--cc-teal);
+  background: radial-gradient(circle at 30% 25%, #3a3a3a, #1a1a1a);
+  color: var(--cc-teal);
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ccPlayBtn:hover {
+  box-shadow: 0 0 16px var(--cc-teal-glow);
+}
+
+/* ----- Right properties ----- */
+.paramsShell {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0 6px 6px;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
+  overflow: hidden;
+  background: #161616;
+}
+
+.paramsTabsBar {
+  flex-shrink: 0;
+  padding: 6px 6px 0;
+  background: #141414;
+  border-bottom: 1px solid var(--cc-border);
+}
+
+.ccTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ccTab {
+  border: none;
+  border-radius: var(--cc-radius-sm) var(--cc-radius-sm) 0 0;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: var(--cc-muted);
+}
+
+.ccTab:hover {
+  color: var(--cc-text);
+  background: #222;
+}
+
+.ccTab.is-active {
+  color: var(--cc-text);
+  background: var(--cc-panel2);
+  box-shadow: inset 0 -2px 0 var(--cc-teal);
+}
+
+.paramsPanels {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 8px 8px 10px;
+  overscroll-behavior: contain;
+}
+
+.ccTabPanel {
+  display: none;
+}
+
+.ccTabPanel.is-active {
+  display: block;
+}
+
+.paramRow {
+  display: grid;
+  grid-template-columns: 1fr minmax(72px, 112px);
+  gap: 8px 10px;
+  align-items: center;
+  margin-bottom: 7px;
+}
+
+.paramRowLabel {
+  margin: 0;
+  font-size: 12px;
+  color: #c4c4c4;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.ccInput--compact {
+  max-width: 112px;
+  justify-self: end;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding: 6px 8px;
+}
+
+.paramRowCheck {
+  width: 18px;
+  height: 18px;
+  justify-self: end;
+  cursor: pointer;
+  accent-color: var(--cc-teal);
+}
+
+.hint--inTab {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: var(--cc-radius-sm);
+  background: rgba(0, 193, 180, 0.06);
+  border: 1px solid rgba(0, 193, 180, 0.2);
+  color: #b0c4c2;
+  font-size: 11px;
+}
+
+.styleMergeGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 520px) {
+  .styleMergeGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ccLog {
+  flex: 0 0 auto;
+  margin: 0 6px 4px;
+  padding: 6px 8px;
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid var(--cc-border);
+  background: #141414;
+  max-height: 5.5rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ccLogTitle {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cc-muted);
+  margin-bottom: 4px;
+}
+
+.ccLogHint {
+  margin: 0 0 6px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--cc-muted);
+  opacity: 0.92;
+}
+
+.ccLog pre,
+.ccLogPre {
+  margin: 0;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  font-size: 9px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  color: #c8c8c8;
+}
+
+.ccExportRow {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px 8px;
+  border-top: 1px solid var(--cc-border);
+  background: #181818;
+}
+
+/* ----- Модальное окно параметров экспорта ----- */
+.ccExportModal {
+  position: fixed;
+  inset: 0;
+  z-index: 510;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.ccExportModal.is-open {
+  display: flex;
+}
+
+.ccExportModal__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: pointer;
+}
+
+.ccExportModal__panel {
+  position: relative;
+  z-index: 1;
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(90dvh, 640px);
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #1e242c, #161a20);
+  border: 1px solid var(--cc-border2);
+  border-radius: var(--cc-radius);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 193, 180, 0.12);
+}
+
+.ccExportModal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--cc-border);
+  flex-shrink: 0;
+}
+
+.ccExportModal__head--centered {
+  position: relative;
+  justify-content: center;
+  padding: 14px 44px 10px;
+}
+
+.ccExportModal__headClose {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.ccExportModal__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #e8eef5;
+  text-align: center;
+}
+
+.ccExportModal__body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.ccExportSec {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ccExportSep {
+  border: none;
+  border-top: 1px solid var(--cc-border);
+  margin: 2px 0;
+}
+
+.ccExportFieldRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ccExportFieldRow--split {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ccExportFieldRow--wrap {
+  flex-wrap: wrap;
+}
+
+.ccExportDurPair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+}
+
+.ccExportMiniLab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--cc-muted);
+  white-space: nowrap;
+}
+
+.ccExportField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--cc-text);
+}
+
+.ccExportField__lab {
+  font-size: 12px;
+  font-weight: 600;
+  color: #c5ced8;
+}
+
+.ccInput--block {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ccInput--pill {
+  border-radius: 999px;
+  padding: 8px 14px;
+  min-height: 36px;
+}
+
+.ccInput--numnarrow {
+  width: 5.5rem;
+  max-width: 100%;
+  text-align: center;
+}
+
+.ccExportModal__foot {
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--cc-border);
+  flex-shrink: 0;
+}
+
+.ccExportModal__foot--center {
+  display: flex;
+  justify-content: center;
+}
+
+.ccBtn--exportStart {
+  min-width: 220px;
+  padding: 10px 22px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ----- Bottom timeline (CapCut) ----- */
+.ccTimeline {
+  flex: 0 0 auto;
+  background: #161616;
+  border-top: 1px solid var(--cc-border);
+  padding: 2px 6px 4px;
+}
+
+.ccTimelineToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 4px;
+}
+
+.ccTimelineLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cc-muted);
+}
+
+.ccTimelineTools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ccTimelineHint {
+  font-size: 10px;
+  color: var(--cc-muted);
+}
+
+.ccTimelineLayersHead {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--cc-muted);
+  padding: 2px 6px 4px;
+  letter-spacing: 0.02em;
+}
+
+.ccTimelineLayersWrap {
+  margin: 0 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #2a2a2a;
+  background: #0f0f0f;
+}
+
+.ccTimelineLayersWrap--pro {
+  max-height: min(23vh, 172px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.ccTimelineCtx {
+  position: fixed;
+  z-index: 10050;
+  min-width: 240px;
+  max-width: min(320px, 92vw);
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid #3d4d48;
+  background: linear-gradient(165deg, #242a28, #1a1e1c);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 193, 180, 0.12);
+  overflow: hidden;
+}
+
+.ccTimelineCtx__head {
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid #333;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.ccTimelineCtx__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7a9a94;
+}
+
+.ccTimelineCtx__hint {
+  margin: 6px 0 0;
+  font-size: 10px;
+  line-height: 1.35;
+  color: #8a9490;
+}
+
+.ccTimelineCtx__layerName {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #eaf9f6;
+  line-height: 1.25;
+}
+
+.ccTimelineCtx__sep {
+  height: 1px;
+  margin: 2px 0;
+  background: #333;
+}
+
+.ccTimelineCtx__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: #f0f4f2;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ccTimelineCtx__itemIcon {
+  flex: 0 0 22px;
+  width: 22px;
+  text-align: center;
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.ccTimelineCtx__itemText {
+  flex: 1;
+  line-height: 1.25;
+}
+
+.ccTimelineCtx__itemSub {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #8fa8a3;
+}
+
+.ccTimelineCtx__item:hover {
+  background: rgba(0, 193, 180, 0.14);
+  color: #fff;
+}
+
+.ccTimelineCtx__item:hover .ccTimelineCtx__itemSub {
+  color: #b8d4cf;
+}
+
+/* ----- Pro timeline (tracks + clips) ----- */
+.ccTimelinePro {
+  display: flex;
+  flex-direction: column;
+  min-height: 80px;
+  flex: 1;
+  min-height: 0;
+}
+
+.ccTimelinePro__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.ccTimelinePro__scroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+  position: relative;
+}
+
+.ccTimelinePro__scrollInner {
+  position: relative;
+}
+
+.ccTimelinePro__ruler {
+  height: 22px;
+  border-bottom: 1px solid #2a2a2a;
+  background: #161616;
+  position: relative;
+  user-select: none;
+}
+
+.ccTimelinePro__rulerTick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #444;
+  font-size: 9px;
+  color: #888;
+  padding-left: 3px;
+  white-space: nowrap;
+}
+
+.ccTimelinePro__rulerTick--major {
+  background: #666;
+  color: #bbb;
+}
+
+.ccTimelinePro__lanes {
+  position: relative;
+}
+
+.ccTimelinePro__lane {
+  height: 44px;
+  border-bottom: 1px solid #222;
+  position: relative;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.02) 0,
+    rgba(255, 255, 255, 0.02) 1px,
+    transparent 1px,
+    transparent 32px
+  );
+}
+
+.ccTimelinePro__laneTrack {
+  position: absolute;
+  inset: 2px 0;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.ccTimelinePro__clip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 8px;
+  border-radius: 3px;
+  border: 1px solid #0a4d47;
+  box-shadow: 0 0 0 1px rgba(0, 193, 180, 0.15);
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.ccTimelinePro__clip.is-selected {
+  box-shadow: 0 0 0 2px #fff;
+  border-color: #7ee8dc;
+  z-index: 2;
+}
+
+.ccTimelinePro__clip.is-timeline-hidden {
+  opacity: 0.42;
+  filter: grayscale(0.4);
+}
+
+.ccTimelinePro__clip.is-scene-hidden:not(.is-timeline-hidden) {
+  opacity: 0.72;
+  border-style: dashed;
+}
+
+.ccTimelinePro__clipHeader {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 2px 6px 1px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #e8fffc;
+  background: linear-gradient(180deg, #0d5c55, #0a4540);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.ccTimelinePro__clipMeta {
+  font-size: 8px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+  font-variant-numeric: tabular-nums;
+}
+
+.ccTimelinePro__clipFilm {
+  flex: 1;
+  min-height: 0;
+  background-size: auto 100%;
+  background-repeat: repeat-x;
+  background-position: 0 center;
+}
+
+.ccTimelinePro__handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 3;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.ccTimelinePro__handle--L {
+  left: 0;
+  border-radius: 3px 0 0 3px;
+}
+
+.ccTimelinePro__handle--R {
+  right: 0;
+  border-radius: 0 3px 3px 0;
+}
+
+.ccTimelinePro__playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+  z-index: 20;
+}
+
+.ccZoom {
+  width: 120px;
+  accent-color: var(--cc-teal);
+}
+
+.ccTimelineRuler {
+  height: 18px;
+  margin: 0 2px 4px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+      90deg,
+      #333 0,
+      #333 1px,
+      transparent 1px,
+      transparent calc(10px * var(--cc-tl-zoom, 1))
+    )
+    #1a1a1a;
+}
+
+.ccTimelineScrub {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.ccScrub {
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  accent-color: var(--cc-teal);
+  cursor: pointer;
+}
+
+.ccTimeReadout {
+  flex-shrink: 0;
+  min-width: 108px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--cc-muted);
+}
+
+/* ----- Панель настроек элемента (колонка «Медиа», без затемнения превью) ----- */
+.ccElementPanel {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+  border: 1px solid #0f5c56;
+  border-radius: var(--cc-radius);
+  background: linear-gradient(180deg, #1a2221, #141918);
+  box-shadow: 0 0 0 1px rgba(0, 193, 180, 0.12);
+  /* Явная высота: иначе flex-ребёнок с flex:1 и min-height:0 схлопывается в 0 при height:auto у родителя */
+  height: min(62vh, 560px);
+  max-height: min(62vh, 560px);
+  overflow: hidden;
+}
+
+.ccElementPanel[hidden] {
+  display: none !important;
+}
+
+.ccElementPanel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 6px;
+  border-bottom: 1px solid var(--cc-border);
+  flex-shrink: 0;
+}
+
+.ccElementPanel__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cc-teal);
+}
+
+.ccElementPanel__hint {
+  margin: 0;
+  padding: 6px 10px 0;
+  font-size: 10px;
+  color: var(--cc-muted);
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.ccElementPanel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* Нижний запас: последние поля не уезжают под полосу кнопок и остаются прокручиваемыми */
+  padding: 8px 10px 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  position: relative;
+  z-index: 0;
+  scroll-padding-bottom: 64px;
+}
+
+.ccElementPanel__foot {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 8px 8px;
+  border-top: 1px solid var(--cc-border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.ccElemSection {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cc-teal-dim);
+  margin: 4px 0 2px;
+}
+
+.ccElemDetails {
+  border: 1px solid rgba(0, 193, 180, 0.22);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  /* не hidden: иначе обрезается контент раскрытого блока и ломается общий скролл панели */
+  overflow: visible;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.ccElemDetails + .ccElemDetails {
+  margin-top: 6px;
+}
+
+.ccElemDetails__summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cc-teal);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ccElemDetails__summary::-webkit-details-marker {
+  display: none;
+}
+
+.ccElemDetails__summary::after {
+  content: "▸";
+  flex-shrink: 0;
+  font-size: 10px;
+  opacity: 0.75;
+  transition: transform 0.15s ease;
+  line-height: 1;
+}
+
+.ccElemDetails[open] > .ccElemDetails__summary::after {
+  transform: rotate(90deg);
+}
+
+.ccElemDetails__body {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--cc-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ccFontPickRow {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.ccFontPickRow .ccFontPickSelect,
+.ccFontPickRow select.ccInput {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ccElemField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ccElemField label,
+.ccElemField .ccElemField__lab {
+  font-size: 11px;
+  color: var(--cc-muted);
+}
+
+.ccElemField .ccInput,
+.ccElemField textarea {
+  width: 100%;
+}
+
+.ccElemField__hint {
+  font-size: 10px;
+  color: var(--cc-muted);
+  line-height: 1.35;
+  margin-top: 3px;
+}
+
+.ccTextarea--overlay {
+  min-height: 5.5rem;
+  max-height: 16rem;
+  resize: vertical;
+}
+
+.ccElemColorTools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.ccElemColorTools .ccElemColorHex {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ccElemColorTools .ccColorNative {
+  flex-shrink: 0;
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--cc-border2);
+  border-radius: 6px;
+  cursor: pointer;
+  background: #1a1a1a;
+}
+
+.ccElemColorTools .ccElemColorSwatch {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--cc-border2);
+}
+
+.ccBgPaletteRow.is-previewing {
+  outline: 2px solid var(--cc-teal);
+  outline-offset: 2px;
+  border-radius: var(--cc-radius-sm);
+}
+
+.ccBgPalettePreview {
+  flex-shrink: 0;
+  min-width: 2.25rem;
+}
+
+.ccElemRow2--checks {
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+}
+
+.ccElemRow2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ccElemCheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--cc-text);
+}
+
+.ccElemCheck input {
+  accent-color: var(--cc-teal);
+}
+
+/* ----- Модальное окно вывода рендера ----- */
+.ccRenderModal {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.ccRenderModal.is-open {
+  display: flex;
+}
+
+.ccRenderModal__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: pointer;
+}
+
+.ccRenderModal__panel {
+  position: relative;
+  z-index: 1;
+  width: min(560px, calc(100vw - 24px));
+  max-height: min(92dvh, 820px);
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #1e242c, #161a20);
+  border: 1px solid var(--cc-border2);
+  border-radius: var(--cc-radius);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 193, 180, 0.12);
+}
+
+.ccRenderModal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--cc-border);
+  flex-shrink: 0;
+}
+
+.ccRenderModal__head--centered {
+  position: relative;
+  justify-content: center;
+  padding: 14px 44px 10px;
+}
+
+.ccRenderModal__headClose {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.ccRenderModal__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #e8eef5;
+  text-align: center;
+}
+
+/* Прогресс текущего ролика (верхняя полоса) */
+.ccRenderModal__clipBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 14px 10px;
+  flex-shrink: 0;
+}
+
+.ccRenderModal__clipBar .ccRenderBarTrack {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.ccRenderModal__barPct {
+  min-width: 48px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--cc-teal);
+  font-variant-numeric: tabular-nums;
+}
+
+.ccRenderModal__main {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 10px;
+  padding: 0 12px 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+
+@media (max-width: 720px) {
+  .ccRenderModal__main {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ccRenderModal__previewCol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ccRenderPreviewFrame {
+  aspect-ratio: 9 / 16;
+  max-height: min(52dvh, 400px);
+  margin: 0 auto;
+  width: 100%;
+  max-width: 200px;
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid var(--cc-border2);
+  overflow: hidden;
+  background: #0a0a0a;
+}
+
+.ccRenderPreviewImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ccRenderModal__miniActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.ccRenderModal__statsCol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 15px;
+  color: #d8e4f0;
+  padding: 4px 0 0;
+  min-height: 0;
+}
+
+.ccRenderStatLine {
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+}
+
+.ccRenderStatLine--file {
+  word-break: break-word;
+  color: #b8e8e2;
+  font-size: 13px;
+}
+
+.ccRenderStatSep {
+  border: none;
+  border-top: 1px solid var(--cc-border);
+  margin: 4px 0;
+}
+
+.ccRenderModal__statsBtns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.ccRenderModal__jobBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 10px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--cc-border);
+}
+
+.ccRenderModal__jobBar .ccRenderBarTrack {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.ccRenderBarFill--job {
+  background: linear-gradient(90deg, #4a3d8a, #7e6fd4, #c4b5f5);
+  box-shadow: 0 0 12px rgba(126, 111, 212, 0.35);
+}
+
+.ccBtn--sm {
+  font-size: 11px;
+  padding: 6px 10px;
+}
+
+/* Свёрнуто: не занимать высоту модалки */
+.ccRenderLogDetails:not(.ccRenderLogDetails--open) {
+  display: none;
+}
+
+.ccRenderLogDetails.ccRenderLogDetails--open {
+  display: flex;
+  flex: 0 1 auto;
+  min-height: 0;
+  margin: 0 14px 12px;
+  flex-direction: column;
+  border: 1px solid var(--cc-border2);
+  border-radius: var(--cc-radius-sm);
+  background: #13161c;
+  overflow: hidden;
+}
+
+.ccRenderLogDetails.ccRenderLogDetails--open .ccRenderModal__scroll {
+  flex: 1 1 auto;
+  min-height: 100px;
+  max-height: min(28dvh, 260px);
+  margin: 8px;
+  border-radius: var(--cc-radius-sm);
+}
+
+.ccRenderBarTrack {
+  height: 10px;
+  border-radius: 999px;
+  background: #0e1116;
+  border: 1px solid #2a3140;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.ccRenderBarFill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #007f76, var(--cc-teal), #5ee7df);
+  box-shadow: 0 0 12px var(--cc-teal-glow);
+  transition: width 0.12s ease-out;
+}
+
+.ccRenderModal__scroll {
+  flex: 1 1 0;
+  min-height: 120px;
+  overflow: auto;
+  margin: 0 10px;
+  padding: 8px 10px;
+  border-radius: var(--cc-radius-sm);
+  background: #0b0d10;
+  border: 1px solid #252a32;
+}
+
+.ccRenderModal__pre {
+  margin: 0;
+  font-family: ui-monospace, Consolas, "Cascadia Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #c5d0de;
+}
+
+/* ----- JSON пресета (в левом доке) ----- */
+.ccAdv {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--cc-border2);
+  border-radius: var(--cc-radius);
+  background: #1c1c1c;
+  color: var(--cc-muted);
+  font-size: 11px;
+}
+
+.ccAdv--dock {
+  width: 100%;
+  margin-top: 12px;
+  flex-shrink: 0;
+}
+
+.ccAdv:not([open]) {
+  max-height: 2.25rem;
+  overflow: hidden;
+}
+
+.ccAdv[open] {
+  max-height: min(40dvh, 360px);
+  overflow: auto;
+  padding: 8px 10px 10px;
+}
+
+.ccAdv summary {
+  cursor: pointer;
+  color: #e5e5e5;
+  list-style: none;
+  padding: 8px 10px;
+  font-weight: 600;
+  font-size: 11px;
+  user-select: none;
+}
+
+.ccAdv summary::-webkit-details-marker {
+  display: none;
+}
+
+.ccAdv[open] summary {
+  border-bottom: 1px solid var(--cc-border);
+  margin-bottom: 6px;
+}
+
+/* ----- Конструктор имени файла (рендер) ----- */
+.ccNameBuilderField {
+  margin-bottom: 4px;
+}
+
+.ccNameBuilderHint {
+  font-size: 11px;
+  color: var(--cc-muted);
+  line-height: 1.45;
+  margin: 0 0 10px;
+}
+
+.ccNameBuilderMount {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ccNameBuilderRows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ccNameBuilderRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid var(--cc-border2);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.ccNameBuilderType {
+  flex: 1 1 200px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ccNameBuilderLiteral {
+  flex: 2 1 140px;
+  min-width: 0;
+}
+
+.ccNameBuilderLiteral.is-hidden {
+  display: none !important;
+}
+
+.ccNameBuilderRowTools {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.ccNameBuilderIconBtn {
+  min-width: 32px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.ccNameBuilderAdd {
+  align-self: flex-start;
+}
+
+.ccNameBuilderPreview {
+  font-size: 11px;
+  color: var(--cc-teal-dim);
+  margin-top: 4px;
+  line-height: 1.45;
+  word-break: break-word;
+}

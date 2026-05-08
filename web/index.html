@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Гороскоп-студия</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body class="theme-capcut">
+    <div class="ccApp">
+      <!-- Верхняя полоса в духе CapCut -->
+      <header class="ccTopBar">
+        <div class="ccTopBar__left">
+          <button type="button" class="ccIconBtn" id="btnMenuStub" title="Меню" aria-label="Меню">☰</button>
+          <div class="ccLogoMark" aria-hidden="true"></div>
+          <span class="ccBrand">Гороскоп-студия</span>
+        </div>
+        <div class="ccTopBar__center">
+          <input
+            type="text"
+            class="ccProjectTitle"
+            id="projectTitle"
+            value="Новый проект"
+            spellcheck="false"
+            autocomplete="off"
+          />
+        </div>
+        <div class="ccTopBar__right">
+          <button id="btnSavePresetFile" type="button" class="ccBtn ccBtn--ghost">Сохранить пресет</button>
+          <button
+            id="btnLoadPresetFile"
+            type="button"
+            class="ccBtn ccBtn--ghost"
+            title="Выбрать JSON на диске и подставить в редактор"
+          >
+            Загрузить из файла
+          </button>
+          <button
+            id="btnReload"
+            type="button"
+            class="ccBtn ccBtn--ghost"
+            title="Перечитать ui_settings.json с сервера (как в папке проекта)"
+          >
+            Загрузить пресет
+          </button>
+          <button id="btnSave" type="button" class="ccBtn ccBtn--teal" title="Записать текущие настройки в ui_settings.json на сервере">
+            Сохранить
+          </button>
+        </div>
+        <input type="file" id="presetFileInput" accept=".json,application/json" hidden />
+      </header>
+
+      <div id="studioBanner" class="ccBanner"></div>
+
+      <!-- Три колонки как в редакторе: Медиа | Просмотр | Свойства; таймлайн снизу только под превью и свойствами -->
+      <div class="ccWorkspace" id="editorLayout">
+        <aside class="ccDock ccDock--left" id="colScene">
+          <div class="ccDockHead">
+            <span class="ccDockTitle">Медиа</span>
+            <span class="ccDockHint">Контент сцены</span>
+          </div>
+          <div class="ccDockBody">
+            <div class="ccMediaStrip" aria-label="Разделы">
+              <button type="button" class="ccMediaTab is-active" data-media-tab="main" title="Контент">▣</button>
+              <button type="button" class="ccMediaTab" disabled title="Зарезервировано">♪</button>
+              <button type="button" class="ccMediaTab" data-media-tab="overlays" title="Свои текст и картинки">T</button>
+            </div>
+            <div class="ccDockStack">
+              <div id="elementEditorPanel" class="ccElementPanel" hidden>
+                <div class="ccElementPanel__head">
+                  <span id="elementEditorTitle" class="ccElementPanel__title">Элемент</span>
+                  <button type="button" class="ccIconBtn" id="elementEditorClose" title="Закрыть панель">✕</button>
+                </div>
+                <p class="ccElementPanel__hint" id="elementEditorHint">
+                  ПКМ или двойной щелчок по элементу в просмотре, либо ЛКМ по клипу на таймлайне. Здесь — настройки выбранного элемента слева в «Медиа»; превью не перекрывается.
+                </p>
+                <div id="elementEditorBody" class="ccElementPanel__body"></div>
+                <div class="ccElementPanel__foot">
+                  <button type="button" class="ccBtn ccBtn--ghost" id="elementEditorCancel">Отмена</button>
+                  <button type="button" class="ccBtn ccBtn--teal" id="elementEditorApply">Применить</button>
+                </div>
+              </div>
+              <div id="mediaPaneMain" class="ccMediaPane ccMediaPane--main">
+                <div class="field">
+                  <label for="headline">Заголовок на карточке</label>
+                  <input id="headline" class="ccInput" type="text" autocomplete="off" spellcheck="false" />
+                </div>
+                <div class="field">
+                  <label for="hero">Метка для файла (опционально)</label>
+                  <input id="hero" class="ccInput" type="text" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="dates">Подпись на карточке (даты / подзаголовок)</label>
+                  <input id="dates" class="ccInput" type="text" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="bio">12 знаков зодиака в случайном порядке (описание)</label>
+                  <textarea id="bio" class="ccTextarea"></textarea>
+                </div>
+                <div class="ccBtnRow">
+                  <button id="btnRandom" type="button" class="ccBtn ccBtn--teal ccBtn--grow">Случайный ролик</button>
+                  <button id="btnResum" type="button" class="ccBtn ccBtn--ghost ccBtn--grow">Перемешать знаки</button>
+                  <button
+                    id="btnGenHeadline"
+                    type="button"
+                    class="ccBtn ccBtn--ghost ccBtn--grow"
+                    title="Случайная строка из списка тем заголовков"
+                  >
+                    Тема заголовка
+                  </button>
+                </div>
+                <button id="btnApplyParams" type="button" class="ccBtn ccBtn--secondary" style="width: 100%; margin-top: 10px">
+                  Применить параметры
+                </button>
+
+                <details class="ccAdv ccAdv--dock" id="presetJsonPanel">
+                  <summary>JSON пресета</summary>
+                  <div class="field" style="margin-top: 8px">
+                    <textarea id="settingsJsonRaw" class="ccTextarea ccTextarea--code" spellcheck="false"></textarea>
+                  </div>
+                  <button id="btnApplyJson" type="button" class="ccBtn ccBtn--ghost" style="margin-top: 8px; width: 100%">
+                    Применить JSON
+                  </button>
+                </details>
+              </div>
+              <div id="mediaPaneOverlays" class="ccMediaPane ccMediaPane--overlays" hidden>
+                <p class="ccDockHint" style="margin: 0 0 10px">
+                  Блоки поверх кадра 9:16 — те же стили, что у текста сцены. ПКМ по блоку в превью — правки.
+                </p>
+                <div class="ccBtnRow">
+                  <button type="button" id="btnAddOverlayText" class="ccBtn ccBtn--teal ccBtn--grow">+ Текст</button>
+                  <button type="button" id="btnAddOverlayImage" class="ccBtn ccBtn--ghost ccBtn--grow">+ Картинка</button>
+                  <button type="button" id="btnAddOverlayGif" class="ccBtn ccBtn--ghost ccBtn--grow">+ GIF</button>
+                </div>
+                <div id="sceneOverlaysList" class="ccOverlaysList"></div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <section class="ccDock ccDock--center" id="colPreview">
+          <div class="ccPreviewHead">
+            <span class="ccPreviewTitle">Просмотр</span>
+            <div class="ccPreviewHeadTools">
+              <label class="ccPreviewShortsCtl" title="Только в окне студии: web/shorts.png поверх кадра (нужна прозрачность в области видео). Превью с сервера чуть ужимается для скорости. В экспорт не попадает.">
+                <input type="checkbox" id="previewShortsShell" />
+                <span>Shorts</span>
+              </label>
+              <label class="ccPreviewScaleCtl" title="Визуальный размер кадра 9:16 в области просмотра">
+                <span class="ccPreviewScaleCtl__lab">Масштаб</span>
+                <input type="range" id="previewStackScale" min="60" max="100" value="100" step="1" />
+                <span class="ccPreviewScaleCtl__val" id="previewStackScaleVal">100%</span>
+              </label>
+              <span class="ccPreviewBadge">9 : 16</span>
+            </div>
+          </div>
+          <div class="ccPreviewFrame">
+            <div class="ccPreviewMon">
+              <div class="ccPreviewStack" id="previewStack" style="--cc-preview-stack-scale: 1">
+                <div class="ccPreviewLoading" id="previewLoading" aria-hidden="true">
+                  <div class="ccPreviewLoading__rings" aria-hidden="true">
+                    <span></span><span></span>
+                  </div>
+                  <span class="ccPreviewLoading__text">Загрузка кадра…</span>
+                </div>
+                <div class="ccPreviewMediaSlot" id="previewMediaSlot">
+                  <img
+                    id="previewImg"
+                    class="ccPreviewImg"
+                    alt=""
+                    draggable="false"
+                    src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                  />
+                  <svg
+                    id="previewOverlay"
+                    class="ccPreviewOverlay"
+                    viewBox="0 0 1080 1920"
+                    preserveAspectRatio="xMidYMid meet"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden="true"
+                  >
+                    <g id="previewHitboxGroup"></g>
+                  </svg>
+                </div>
+                <img
+                  id="previewShortsChrome"
+                  class="ccPreviewShortsChrome"
+                  alt=""
+                  draggable="false"
+                  hidden
+                  src="assets/shorts.png"
+                />
+              </div>
+              <div class="ccPreviewTimeOverlay" id="previewTimeOverlay">0.00 / 0.00</div>
+            </div>
+            <div class="ccPreviewTransport">
+              <button type="button" class="ccIconBtn" id="btnSeekStart" title="В начало">⏮</button>
+              <button type="button" class="ccPlayBtn" id="btnPlayToggle" title="Пуск / пауза">▶</button>
+              <button type="button" class="ccIconBtn" id="btnSeekEnd" title="В конец">⏭</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="ccDock ccDock--right panel--params" id="colParams">
+          <div class="ccPropsHead">
+            <span class="ccPropsTitle">Свойства</span>
+            <button type="button" class="ccBtn ccBtn--teal ccPropsApplyAll" id="btnPropsApplyAll" title="Зафиксировать поля вкладок и обновить предпросмотр">
+              Применить везде
+            </button>
+          </div>
+          <div class="paramsShell">
+            <div class="paramsTabsBar">
+              <div class="ccTabs" id="tabButtons"></div>
+            </div>
+            <div class="paramsPanels" id="tabPanels"></div>
+          </div>
+
+          <div class="ccLog">
+            <pre id="log" class="ccLogPre" aria-label="Служебные сообщения"></pre>
+          </div>
+
+          <div class="ccExportRow">
+            <button id="btnRenderCurrent" type="button" class="ccBtn ccBtn--teal">Экспорт видео</button>
+            <button id="btnOpenRenderLog" type="button" class="ccBtn ccBtn--ghost" title="Окно «Рендеринг» с прогрессом и консолью">
+              Окно вывода
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      <!-- Таймлайн под превью и «Свойства» (колонка «Медиа» слева на всю высоту, как на референсе) -->
+      <div class="ccAppTimelineRow" aria-hidden="false">
+        <div class="ccTimelinePad" aria-hidden="true"></div>
+        <footer class="ccTimeline ccTimeline--wide" id="timelineDock">
+        <div class="ccTimelineToolbar">
+          <span class="ccTimelineLabel">Таймлайн</span>
+          <div class="ccTimelineTools">
+            <span class="ccTimelineHint">масштаб</span>
+            <input type="range" class="ccZoom" id="timelineZoom" min="1" max="3" step="0.05" value="3" title="Визуальный масштаб шкалы (по умолчанию — максимум)" />
+          </div>
+        </div>
+        <div class="ccTimelineLayersWrap ccTimelineLayersWrap--pro" id="timelineLayersPanel" aria-label="Таймлайн слоёв"></div>
+        <div class="ccTimelineScrub">
+          <input id="timeline" class="ccScrub" type="range" min="0" max="10" step="0.02" value="0" />
+          <div id="timeReadout" class="ccTimeReadout">0.00 / 0.00</div>
+        </div>
+        </footer>
+      </div>
+    </div>
+
+    <!-- Параметры экспорта -->
+    <div id="exportSettingsModal" class="ccExportModal" aria-hidden="true">
+      <button type="button" class="ccExportModal__backdrop" id="exportSettingsBackdrop" tabindex="-1" aria-label="Закрыть"></button>
+      <div class="ccExportModal__panel" role="dialog" aria-modal="true" aria-labelledby="exportSettingsTitle">
+        <div class="ccExportModal__head ccExportModal__head--centered">
+          <h2 class="ccExportModal__title" id="exportSettingsTitle">Экспорт видео</h2>
+          <button type="button" class="ccIconBtn ccExportModal__headClose" id="exportSettingsClose" title="Закрыть">✕</button>
+        </div>
+        <div class="ccExportModal__body">
+          <section class="ccExportSec">
+            <div class="ccExportFieldRow">
+              <span class="ccExportField__lab">Сохранить в папку</span>
+            </div>
+            <div class="ccFontPickRow" style="margin-top: 8px">
+              <input
+                id="exportSaveFolder"
+                class="ccInput ccInput--block"
+                type="text"
+                readonly
+                autocomplete="off"
+                placeholder="Выберите папку кнопкой справа"
+              />
+              <button type="button" class="ccBtn ccBtn--ghost" id="btnExportPickFolder">Выбрать папку…</button>
+            </div>
+          </section>
+          <hr class="ccExportSep" />
+          <section class="ccExportSec">
+            <div class="ccExportFieldRow ccExportFieldRow--split">
+              <span class="ccExportField__lab">Разрешение</span>
+              <select id="exportResolution" class="ccInput ccInput--pill">
+                <option value="1080p" selected>1080p (1080×1920)</option>
+                <option value="720p">720p (720×1280)</option>
+                <option value="480p">480p (480×854)</option>
+              </select>
+            </div>
+            <div class="ccExportFieldRow ccExportFieldRow--split">
+              <span class="ccExportField__lab">Битрейт (Мбит/с)</span>
+              <select id="exportBitrate" class="ccInput ccInput--pill">
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5" selected>5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
+              </select>
+            </div>
+            <div class="ccExportFieldRow ccExportFieldRow--split">
+              <span class="ccExportField__lab">FPS</span>
+              <select id="exportFps" class="ccInput ccInput--pill">
+                <option value="15">15</option>
+                <option value="24">24</option>
+                <option value="30" selected>30</option>
+                <option value="50">50</option>
+                <option value="60">60</option>
+              </select>
+            </div>
+          </section>
+          <hr class="ccExportSep" />
+          <section class="ccExportSec">
+            <div class="ccExportFieldRow ccExportFieldRow--split ccExportFieldRow--wrap">
+              <span class="ccExportField__lab">Длительность (сек.)</span>
+              <div class="ccExportDurPair">
+                <label class="ccExportMiniLab"
+                  >от
+                  <input id="exportDurationMin" class="ccInput ccInput--pill ccInput--numnarrow" type="number" step="0.1" min="0.5" />
+                </label>
+                <label class="ccExportMiniLab"
+                  >до
+                  <input id="exportDurationMax" class="ccInput ccInput--pill ccInput--numnarrow" type="number" step="0.1" min="0.5" />
+                </label>
+              </div>
+            </div>
+            <div class="ccExportFieldRow ccExportFieldRow--split">
+              <span class="ccExportField__lab">Кол-во видео</span>
+              <input id="exportVideoCount" class="ccInput ccInput--pill ccInput--numnarrow" type="number" min="1" step="1" value="1" />
+            </div>
+          </section>
+        </div>
+        <div class="ccExportModal__foot ccExportModal__foot--center">
+          <button type="button" class="ccBtn ccBtn--teal ccBtn--exportStart" id="btnExportStart">Начать рендер</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Окно вывода рендера -->
+    <div id="renderLogModal" class="ccRenderModal" aria-hidden="true">
+      <button type="button" class="ccRenderModal__backdrop" id="renderLogBackdrop" tabindex="-1" aria-label="Закрыть"></button>
+      <div class="ccRenderModal__panel" role="dialog" aria-modal="true" aria-labelledby="renderLogTitle">
+        <div class="ccRenderModal__head ccRenderModal__head--centered">
+          <h2 class="ccRenderModal__title" id="renderLogTitle">Рендер видео</h2>
+          <button type="button" class="ccIconBtn ccRenderModal__headClose" id="btnRenderLogClose" title="Закрыть">✕</button>
+        </div>
+
+        <div class="ccRenderModal__clipBar" aria-label="Прогресс текущего видео">
+          <div class="ccRenderBarTrack">
+            <div class="ccRenderBarFill" id="renderClipProgressFill"></div>
+          </div>
+          <span class="ccRenderModal__barPct" id="renderClipProgressPct">0%</span>
+        </div>
+
+        <div class="ccRenderModal__main">
+          <div class="ccRenderModal__previewCol">
+            <div class="ccRenderPreviewFrame">
+              <img
+                id="renderPreviewImg"
+                class="ccRenderPreviewImg"
+                alt=""
+                draggable="false"
+                src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+              />
+            </div>
+            <div class="ccRenderModal__miniActions">
+              <button
+                type="button"
+                class="ccBtn ccBtn--ghost ccBtn--sm"
+                id="btnShowRenderLogs"
+                aria-expanded="false"
+                aria-controls="renderLogScroll"
+              >
+                Показать логи
+              </button>
+              <button type="button" class="ccBtn ccBtn--ghost ccBtn--sm" id="btnCopyRenderLogs" title="Скопировать консоль">
+                Копировать логи
+              </button>
+              <button type="button" class="ccBtn ccBtn--ghost ccBtn--sm" id="btnRenderLogClear">Очистить</button>
+            </div>
+          </div>
+          <div class="ccRenderModal__statsCol">
+            <div class="ccRenderStatLine" id="renderStatElapsed">Прошло: —</div>
+            <div class="ccRenderStatLine" id="renderStatEta">Осталось: —</div>
+            <hr class="ccRenderStatSep" />
+            <div class="ccRenderStatLine ccRenderStatLine--file" id="renderStatFilename">—</div>
+            <hr class="ccRenderStatSep" />
+            <div class="ccRenderStatLine" id="renderStatVideosLeft">Осталось видео: —</div>
+            <div class="ccRenderStatLine" id="renderStatSession">Всего прошло: —</div>
+            <div class="ccRenderModal__statsBtns">
+              <button type="button" class="ccBtn ccBtn--ghost" id="btnRenderLogClose2">Закрыть</button>
+              <button type="button" class="ccBtn ccBtn--ghost" id="btnRenderCancel" disabled>Прервать</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ccRenderModal__jobBar" aria-label="Прогресс всей задачи">
+          <div class="ccRenderBarTrack">
+            <div class="ccRenderBarFill ccRenderBarFill--job" id="renderJobProgressFill"></div>
+          </div>
+          <span class="ccRenderModal__barPct" id="renderJobProgressPct">0%</span>
+        </div>
+
+        <div class="ccRenderLogDetails" id="renderLogDetails">
+          <div class="ccRenderModal__scroll" id="renderLogScroll" tabindex="-1" role="region" aria-label="Консоль рендера">
+            <pre id="renderLogOut" class="ccRenderModal__pre" spellcheck="false"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

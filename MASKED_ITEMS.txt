@@ -1,0 +1,24 @@
+This project was cleaned in a non-destructive way.
+Nothing was deleted. Items were moved to `_masked`.
+
+Moved from project root to `_masked`:
+- card/
+- effects/
+- photos/
+- temp/
+- temp_images/
+- script.txt
+- heroes_generated_content.txt
+- photo.png
+
+Moved from `fonts/` to `_masked/fonts_extra/`:
+- gothamnarrow_black.otf
+- Roadkill Heavy Regular.otf
+- TheCrewPro.ttf
+- ????? ????? 14192- 96.ttf
+
+Kept in `fonts/` because required by `script.py`:
+- impact.ttf
+- tahomabd.ttf
+
+If needed, restore files by moving them back from `_masked`.
