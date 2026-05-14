@@ -42,7 +42,7 @@ function randomHexColor() {
 
 const TABS = [
   { id: "text", label: "Текст" },
-  { id: "topics", label: "Темы" },
+  { id: "topics", label: "Темы и Промт" },
   { id: "scene", label: "Сцена" },
   { id: "bgframe", label: "Фон" },
   { id: "motion", label: "Анимация" },
@@ -51,20 +51,90 @@ const TABS = [
   { id: "render", label: "Рендер" },
 ];
 
+const TEXT_ALIGN_OPTIONS = [
+  { value: "center", label: "По центру" },
+  { value: "left", label: "По левому краю" },
+  { value: "right", label: "По правому краю" },
+];
+const PHOTO_WIDTH_MAX = 5000;
+
+const POLITICAL_HEADLINE_TOPICS_DEFAULT = [
+  "Пока мы считаем копейки, нам рассказывают про рекорды",
+  "Цены растут быстрее зарплат - кто за это ответит",
+  "У людей кредиты, у чиновников новые обещания",
+  "Нас просят потерпеть, пока кто-то богатеет",
+  "Платежки выше, качество жизни ниже - совпадение",
+  "Когда обещают стабильность, почему кошелек пустеет",
+  "Чья реальность в отчетах и чья на кассе магазина",
+  "Мы экономим на еде, они экономят на правде",
+  "Кому выгодно, чтобы люди молчали о бедности",
+  "Почему простые люди платят за чужие ошибки",
+  "Пока народ затягивает пояса, элита расширяет границы комфорта",
+  "Говорят все под контролем - тогда почему жить тяжелее",
+  "Новые налоги, старые проблемы - где выход",
+  "Когда честный труд не спасает от бедности",
+  "Кто выигрывает, пока большинство выживает",
+].join("\n");
+
 /** Поля пресета (как вкладки справа в Tk). */
 const FIELDS = [
   { tab: "text", key: "title_font_size", label: "Размер заголовка", kind: "int" },
   { tab: "text", key: "title_font_size_min", label: "Мин. размер заголовка (авто по длине)", kind: "int" },
   { tab: "text", key: "title_wrap_width", label: "Ширина колонки заголовка (0 = авто)", kind: "int" },
+  { tab: "text", key: "title_wrap_chars", label: "Макс. символов в строке заголовка (0 = без лимита)", kind: "int" },
   { tab: "text", key: "subtitle_font_size", label: "Размер описания", kind: "int" },
   { tab: "text", key: "subtitle_wrap_width", label: "Ширина колонки описания (0 = авто)", kind: "int" },
+  { tab: "text", key: "subtitle_wrap_chars", label: "Макс. символов в строке описания (0 = без лимита)", kind: "int" },
+  { tab: "text", key: "subtitle_prefix_enabled", label: "Префикс после описания: включить", kind: "bool" },
+  { tab: "text", key: "subtitle_prefix_text", label: "Префикс (текст после описания)", kind: "textarea", rows: 3 },
+  { tab: "text", key: "subtitle_prefix_gap_lines", label: "Отступ до префикса (пустых строк)", kind: "int" },
+  {
+    tab: "text",
+    key: "subtitle_prefix_style_mode",
+    label: "Стиль префикса",
+    kind: "select",
+    options: [
+      { value: "inherit", label: "Как у описания" },
+      { value: "custom", label: "Свой стиль" },
+    ],
+  },
+  { tab: "text", key: "subtitle_prefix_font", label: "Шрифт префикса (пусто = как у описания)", kind: "path_font" },
+  { tab: "text", key: "subtitle_prefix_font_size", label: "Размер префикса (0 = как у описания)", kind: "int" },
+  {
+    tab: "text",
+    key: "subtitle_prefix_text_fill_mode",
+    label: "Заливка текста префикса (для «Свой стиль»)",
+    kind: "select",
+    options: [
+      { value: "solid", label: "Один цвет" },
+      { value: "palette", label: "Палитра цветов (рандом на видео)" },
+    ],
+  },
+  { tab: "text", key: "subtitle_prefix_color", label: "Цвет текста префикса (один)", kind: "color" },
+  { tab: "text", key: "subtitle_prefix_text_colors", label: "Цвета текста префикса (палитра)", kind: "glow_palette" },
+  { tab: "text", key: "subtitle_prefix_bg_enabled", label: "Подложка префикса: включить", kind: "bool" },
+  {
+    tab: "text",
+    key: "subtitle_prefix_bg_color_mode",
+    label: "Режим подложки префикса (для «Свой стиль»)",
+    kind: "select",
+    options: [
+      { value: "solid", label: "Один цвет" },
+      { value: "palette", label: "Палитра цветов (рандом на видео)" },
+    ],
+  },
+  { tab: "text", key: "subtitle_prefix_bg_color", label: "Цвет подложки префикса (один)", kind: "color" },
+  { tab: "text", key: "subtitle_prefix_bg_colors", label: "Цвета подложки префикса (палитра)", kind: "glow_palette" },
   { tab: "text", key: "title_y", label: "Y заголовка", kind: "int" },
   { tab: "text", key: "title_x", label: "Сдвиг заголовка X (от центра)", kind: "int" },
   { tab: "text", key: "subtitle_y", label: "Y описания", kind: "int" },
   { tab: "text", key: "subtitle_x", label: "Сдвиг описания X (от центра)", kind: "int" },
+  { tab: "text", key: "title_align", label: "Выравнивание заголовка", kind: "select", options: TEXT_ALIGN_OPTIONS },
+  { tab: "text", key: "subtitle_align", label: "Выравнивание описания", kind: "select", options: TEXT_ALIGN_OPTIONS },
   { tab: "text", key: "dates_font_size", label: "Размер дат", kind: "int" },
   { tab: "text", key: "dates_y", label: "Y дат", kind: "int" },
   { tab: "text", key: "dates_x", label: "Сдвиг дат X (от центра)", kind: "int" },
+  { tab: "text", key: "dates_align", label: "Выравнивание дат", kind: "select", options: TEXT_ALIGN_OPTIONS },
   { tab: "text", key: "side_padding", label: "Боковой отступ", kind: "int" },
   { tab: "text", key: "subtitle_line_spacing", label: "Межстрочный интервал", kind: "int" },
   { tab: "text", key: "subtitle_max_words", label: "Лимит слов описания", kind: "int" },
@@ -80,11 +150,47 @@ const FIELDS = [
   {
     tab: "topics",
     key: "headline_topics",
-    label: "Темы для заголовков (по одной на строку; для ролика случайно выбирается целая строка)",
+    label: "Темы для заголовков (по одной на строку; в ролике случайно выбирается одна тема)",
     kind: "textarea",
-    rows: 14,
+    rows: 10,
   },
+  {
+    tab: "topics",
+    key: "summary_prompt",
+    label: "Промпт для генерации описания ({topic} и {nonce} доступны как переменные)",
+    kind: "textarea",
+    rows: 8,
+  },
+  {
+    tab: "topics",
+    key: "_hint_ollama",
+    kind: "hint",
+    text:
+      "Ollama — локальная нейросеть для генерации описания. Сохрани пресет кнопкой в шапке или «Сохранить в ui_settings.json», иначе значения не попадут в рендер.\n\n" +
+      "Модель — имя из команды ollama list (например qwen2.5:14b).\n" +
+      "Базовый URL — где слушает API Ollama, обычно http://127.0.0.1:11434 .\n" +
+      "Таймаут (сек) — сколько ждать один ответ; мало — обрывы, много — зависание при сбое.\n" +
+      "temperature — «живость» и резкость: ниже ~0.8 ровнее и суше, выше ~1.1 злее и разнообразнее, слишком высоко — каша.\n" +
+      "top_p — ширина выбора следующих слов (часто 0.9–1.0; чуть выше — свободнее формулировки).\n" +
+      "repeat_penalty — штраф за повтор уже сказанных слов; выше ~1.2 меньше одних и тех же связок (разумно до ~1.35).",
+  },
+  { tab: "topics", key: "ollama_model", label: "Ollama: модель (имя)", kind: "str" },
+  { tab: "topics", key: "ollama_base_url", label: "Ollama: базовый URL API", kind: "str" },
+  { tab: "topics", key: "ollama_timeout_sec", label: "Ollama: таймаут запроса (сек)", kind: "int" },
+  { tab: "topics", key: "ollama_temperature", label: "Ollama: temperature (креативность, 0–2)", kind: "float" },
+  { tab: "topics", key: "ollama_top_p", label: "Ollama: top_p (ядерная выборка, до 1)", kind: "float" },
+  { tab: "topics", key: "ollama_repeat_penalty", label: "Ollama: repeat_penalty (анти-повтор, от 1)", kind: "float" },
 
+  { tab: "scene", key: "card_bg", label: "Подложка карточки: базовый цвет/градиент (#RRGGBB или linear-gradient(...))", kind: "str" },
+  {
+    tab: "scene",
+    key: "card_bg_colors",
+    label: "Подложка карточки: много цветов (рандом по видео)",
+    kind: "glow_palette",
+    hint:
+      "Добавьте несколько цветов — при рендере будет случайно выбрана одна строка на видео. " +
+      "Если список пуст, используется «базовый цвет/градиент» выше.",
+  },
   { tab: "scene", key: "title_color", label: "Цвет заголовка", kind: "color" },
   { tab: "scene", key: "title_stroke", label: "Обводка заголовка", kind: "color" },
   { tab: "scene", key: "subtitle_color", label: "Цвет описания", kind: "color" },
@@ -170,7 +276,24 @@ const FIELDS = [
   { tab: "render", key: "output_name_prefix_pool", label: "Пул префиксов (пусто = встроенный набор)", kind: "textarea", rows: 4 },
 ];
 
-let state = { settings: {} };
+/** Если в старом пресете нет полей Ollama — подставляем те же значения, что в capcut_ui.UiSettings. */
+const OLLAMA_SETTINGS_DEFAULTS = {
+  ollama_model: "qwen2.5:14b",
+  ollama_base_url: "http://127.0.0.1:11434",
+  ollama_timeout_sec: 120,
+  ollama_temperature: 1.08,
+  ollama_top_p: 0.96,
+  ollama_repeat_penalty: 1.22,
+};
+
+function mergeOllamaSettingsDefaults(settings) {
+  if (!settings || typeof settings !== "object") return;
+  for (const [k, v] of Object.entries(OLLAMA_SETTINGS_DEFAULTS)) {
+    if (settings[k] === undefined || settings[k] === null || settings[k] === "") settings[k] = v;
+  }
+}
+
+let state = { settings: {}, sceneImagePath: "" };
 let activeTab = "text";
 let previewTimer = null;
 let lastPreviewUrl = null;
@@ -244,6 +367,7 @@ const STYLE_BASE = {
   shadow_dy: 2,
   bg_enabled: false,
   bg_color: "#000000",
+  bg_color_mode: "solid",
   bg_opacity: 80,
   bg_padding_x: 12,
   bg_padding_y: 8,
@@ -274,6 +398,7 @@ const STYLE_BASE = {
   bg_use_fixed_inner_box: false,
   bg_fixed_width: 0,
   bg_fixed_height: 0,
+  bg_per_line_boxes: false,
   /** Несколько цветов/строк градиента: при непустом списке на каждое новое видео выбирается случайная строка (рендер в Python). */
   bg_colors: [],
 };
@@ -391,6 +516,10 @@ function newOverlayId() {
 
 function mergeOverlayFrame(ov) {
   return { ...DEFAULT_LAYER_FRAME, ...(ov && ov.frame && typeof ov.frame === "object" ? ov.frame : {}) };
+}
+
+function mergeLayerFrame(frame) {
+  return { ...DEFAULT_LAYER_FRAME, ...(frame && typeof frame === "object" ? frame : {}) };
 }
 
 function overlayHitKeys() {
@@ -770,7 +899,11 @@ function syncExportModalFromState() {
   const wm = (state.settings.watermark_text || "").trim();
   const saved = (state.settings.video_output_dir || "").trim();
   const inp = $("exportSaveFolder");
-  if (inp) inp.value = wm || saved || "";
+  if (inp) inp.value = saved || wm || "";
+  const brMin = $("exportBitrateMin");
+  const brMax = $("exportBitrateMax");
+  if (brMin && !String(brMin.value || "").trim()) brMin.value = "5";
+  if (brMax && !String(brMax.value || "").trim()) brMax.value = "8";
   const dmin = $("exportDurationMin");
   const dmax = $("exportDurationMax");
   const lo = state.settings.duration_min;
@@ -1172,11 +1305,13 @@ function buildSettingsWithBgPaletteLinePreview(settings, hit, spec) {
     const cur = { ...STYLE_BASE, ...(baseStyle && typeof baseStyle === "object" ? baseStyle : {}) };
     let out = { ...cur };
     if (g) {
+      out.bg_color_mode = "gradient";
       out.bg_use_gradient = true;
       out.bg_gradient_start = normalizeColorHex(g[1]) || g[1];
       out.bg_gradient_end = normalizeColorHex(g[2]) || g[2];
       out.bg_colors = [];
     } else {
+      out.bg_color_mode = "solid";
       out.bg_use_gradient = false;
       const hx = normalizeColorHex(specTrim);
       if (hx && /^#[0-9A-F]{6}$/i.test(hx)) out.bg_color = hx;
@@ -1362,10 +1497,19 @@ function renderTextStyleBgPalette(st) {
   return `
     <div class="ccElemField" style="margin-top:10px">
       <label>Случайный цвет подложки (каждое новое видео)</label>
-      <p class="ccElemField__hint" style="margin:4px 0 8px 0">Если список не пуст — при рендере выбирается случайная строка. Пустой список = только «Цвет подложки» выше. Можно вписать <code>linear-gradient(180deg, #0a1628, #1e3a4a)</code>. Кнопка 👁 — как будет выглядеть эта строка в превью (без сохранения; повторный щелчок по активной — сброс).</p>
+      <p class="ccElemField__hint" style="margin:4px 0 8px 0">Видно при режиме «Много цветов (рандом)». Если список не пуст — на каждое новое видео случайно берётся одна строка. Пустой список = используется поле «Цвет подложки» ниже. Можно вписать <code>linear-gradient(180deg, #0a1628, #1e3a4a)</code>. Кнопка 👁 — превью этой строки в кадре (повторный щелчок по активной — сброс).</p>
       <div class="ccBgPalette" data-bg-palette-root>${rowsHtml}</div>
       <button type="button" class="ccBtn ccBtn--ghost" data-bg-palette-add style="margin-top:8px">+ Добавить цвет</button>
     </div>`;
+}
+
+function effectiveBgColorMode(st) {
+  const m = String((st && st.bg_color_mode) || "").trim().toLowerCase();
+  if (["solid", "gradient", "palette"].includes(m)) return m;
+  if (st && st.bg_use_gradient) return "gradient";
+  const pal = Array.isArray(st && st.bg_colors) ? st.bg_colors.filter((x) => String(x || "").trim()) : [];
+  if (pal.length) return "palette";
+  return "solid";
 }
 
 function renderTextStyleBgSection(st) {
@@ -1374,13 +1518,23 @@ function renderTextStyleBgSection(st) {
   const biw = bgStrokeInnerWidthDisp(st);
   const bic = bgStrokeInnerColorDisp(st);
   const cr = st.bg_corner_radius != null ? st.bg_corner_radius : 12;
+  const bgMode = effectiveBgColorMode(st);
+  const palHtml = renderTextStyleBgPalette(st);
   return `
     <label class="ccElemCheck"><input type="checkbox" data-style="bg_enabled" ${st.bg_enabled ? "checked" : ""} data-bg-enabled-toggle /> Включить подложку</label>
     <p class="ccElemField__hint">При включённой подложке размер подложки не следует за шрифтом — меняется только текст. Запомненный размер подложки задаётся при первом превью; «Сброс…» — привязать снова к текущему тексту. Ниже можно задать фиксированный прямоугольник.</p>
     <button type="button" class="ccBtn ccBtn--ghost" data-bg-reset-snap>Сбросить запомненный размер подложки</button>
     <input type="hidden" data-style="bg_snap_inner_w" value="${escAttr(st.bg_snap_inner_w != null ? st.bg_snap_inner_w : 0)}" />
     <input type="hidden" data-style="bg_snap_inner_h" value="${escAttr(st.bg_snap_inner_h != null ? st.bg_snap_inner_h : 0)}" />
-    <label class="ccElemCheck"><input type="checkbox" data-style="bg_use_gradient" ${st.bg_use_gradient ? "checked" : ""} /> Градиент подложки</label>
+    <div class="ccElemField">
+      <label>Режим цвета подложки</label>
+      <select class="ccInput" data-style="bg_color_mode">
+        <option value="solid" ${bgMode === "solid" ? "selected" : ""}>Один цвет</option>
+        <option value="gradient" ${bgMode === "gradient" ? "selected" : ""}>Градиент</option>
+        <option value="palette" ${bgMode === "palette" ? "selected" : ""}>Много цветов (рандом)</option>
+      </select>
+    </div>
+    <div data-bg-palette-panel style="display:${bgMode === "palette" ? "block" : "none"}">${palHtml}</div>
     <div class="ccElemRow2">
       ${elemColorFieldStyle("Цвет подложки", "bg_color", st.bg_color)}
       <div class="ccElemField"><label>Непрозрачность подложки (0–255)</label><input class="ccInput" type="number" data-style="bg_opacity" min="0" max="255" step="1" value="${escAttr(st.bg_opacity)}" /></div>
@@ -1394,6 +1548,7 @@ function renderTextStyleBgSection(st) {
       </div>
       <div class="ccElemField"><label>Скругление подложки (px, 0 = без)</label><input class="ccInput" type="number" data-style="bg_corner_radius" min="0" max="80" step="1" value="${escAttr(cr)}" /></div>
     </div>
+    <label class="ccElemCheck"><input type="checkbox" data-style="bg_per_line_boxes" ${st.bg_per_line_boxes ? "checked" : ""} /> Адаптивная подложка по строкам (каждая строка по своей длине)</label>
     <label class="ccElemCheck"><input type="checkbox" data-style="bg_use_fixed_inner_box" ${st.bg_use_fixed_inner_box ? "checked" : ""} /> Фиксированный размер подложки (не от размера шрифта)</label>
     <div class="ccElemRow2">
       <div class="ccElemField"><label>Ширина блока подложки (px, без отступов; 0 = авто)</label><input class="ccInput" type="number" data-style="bg_fixed_width" min="0" max="1080" step="1" value="${escAttr(st.bg_fixed_width != null ? st.bg_fixed_width : 0)}" /></div>
@@ -1432,8 +1587,7 @@ function renderTextStyleBgSection(st) {
         <button type="button" class="ccBtn ccBtn--ghost" data-clear-bg-image title="Очистить">✕</button>
       </div>
       <p class="ccElemField__hint">Папка с несколькими изображениями — при рендере случайный файл из папки.</p>
-    </div>
-    ${renderTextStyleBgPalette(st)}`;
+    </div>`;
 }
 
 function renderTextPaletteRows(colors) {
@@ -1990,6 +2144,21 @@ function wireBgSnapReset(body) {
   });
 }
 
+function wireBgColorModePanel(body) {
+  const sel = body && body.querySelector("select[data-style=\"bg_color_mode\"]");
+  const panel = body && body.querySelector("[data-bg-palette-panel]");
+  if (!sel || !panel) return;
+  const sync = () => {
+    const m = String(sel.value || "").trim().toLowerCase();
+    panel.style.display = m === "palette" ? "block" : "none";
+  };
+  sel.addEventListener("change", () => {
+    sync();
+    schedulePreviewSlow();
+  });
+  sync();
+}
+
 function wireBgPalette(body) {
   const root = body && body.querySelector("[data-bg-palette-root]");
   const addBtn = body && body.querySelector("[data-bg-palette-add]");
@@ -2171,7 +2340,11 @@ function collectStyleFromModalBody(body) {
       o[k] = Number.isFinite(n) ? n : 0;
     } else o[k] = String(el.value ?? "");
   });
-  if (o.bg_enabled) o.bg_resizes_with_font = false;
+  // При выключенном "Фиксированный размер" подложка должна идти по тексту.
+  if (o.bg_enabled) o.bg_resizes_with_font = !Boolean(o.bg_use_fixed_inner_box);
+  const mode = String(o.bg_color_mode || "").trim().toLowerCase();
+  if (mode === "gradient") o.bg_use_gradient = true;
+  else if (mode === "solid" || mode === "palette") o.bg_use_gradient = false;
   return o;
 }
 
@@ -2198,6 +2371,7 @@ function renderTextElementEditor(hit, s) {
     hit === "title" ? "title_font_size" : hit === "subtitle" ? "subtitle_font_size" : hit === "dates" ? "dates_font_size" : "watermark_font_size";
   const yKey = hit === "title" ? "title_y" : hit === "subtitle" ? "subtitle_y" : hit === "dates" ? "dates_y" : null;
   const xKey = hit === "title" ? "title_x" : hit === "subtitle" ? "subtitle_x" : hit === "dates" ? "dates_x" : null;
+  const alignKey = hit === "title" ? "title_align" : hit === "subtitle" ? "subtitle_align" : hit === "dates" ? "dates_align" : null;
 
   let posBlock = "";
   if (hit === "watermark") {
@@ -2243,9 +2417,11 @@ function renderTextElementEditor(hit, s) {
   const sizeExtras =
     hit === "title"
       ? `<div class="ccElemField"><label>Мин. размер при длинном тексте (px)</label><input class="ccInput" type="number" data-top="title_font_size_min" min="10" max="140" step="1" value="${escAttr(s.title_font_size_min != null ? s.title_font_size_min : 22)}" /></div>
-         <div class="ccElemField"><label>Ширина колонки заголовка (px, 0 = по кадру и отступам)</label><input class="ccInput" type="number" data-top="title_wrap_width" min="0" max="1080" step="1" value="${escAttr(s.title_wrap_width != null ? s.title_wrap_width : 0)}" /></div>`
-      : hit === "subtitle"
-        ? `<div class="ccElemField"><label>Ширина колонки описания (px, 0 = по кадру и отступам)</label><input class="ccInput" type="number" data-top="subtitle_wrap_width" min="0" max="1080" step="1" value="${escAttr(s.subtitle_wrap_width != null ? s.subtitle_wrap_width : 0)}" /></div>`
+         <div class="ccElemField"><label>Ширина колонки заголовка (px, 0 = по кадру и отступам)</label><input class="ccInput" type="number" data-top="title_wrap_width" min="0" max="1080" step="1" value="${escAttr(s.title_wrap_width != null ? s.title_wrap_width : 0)}" /></div>
+         <div class="ccElemField"><label>Макс. символов в строке заголовка (0 = без лимита)</label><input class="ccInput" type="number" data-top="title_wrap_chars" min="0" max="300" step="1" value="${escAttr(s.title_wrap_chars != null ? s.title_wrap_chars : 0)}" /></div>`
+       : hit === "subtitle"
+        ? `<div class="ccElemField"><label>Ширина колонки описания (px, 0 = по кадру и отступам)</label><input class="ccInput" type="number" data-top="subtitle_wrap_width" min="0" max="1080" step="1" value="${escAttr(s.subtitle_wrap_width != null ? s.subtitle_wrap_width : 0)}" /></div>
+           <div class="ccElemField"><label>Макс. символов в строке описания (0 = без лимита)</label><input class="ccInput" type="number" data-top="subtitle_wrap_chars" min="0" max="300" step="1" value="${escAttr(s.subtitle_wrap_chars != null ? s.subtitle_wrap_chars : 0)}" /></div>`
         : "";
   const secFont = `
     <div class="ccElemField">
@@ -2254,9 +2430,18 @@ function renderTextElementEditor(hit, s) {
         <select class="ccInput ccFontPickSelect" data-top="${fontKey}"></select>
         <button type="button" class="ccBtn ccBtn--ghost" data-font-pick="${fontKey}">Обзор…</button>
       </div>
-      <p class="ccElemField__hint">Список из Windows/Fonts и fonts/ проекта. «Обзор» — системный диалог (полный путь на диске).</p>
+      <p class="ccElemField__hint">Список системных шрифтов (macOS/Windows/Linux) и fonts/ проекта. Варианты начертания (Regular/Bold/Italic и т.д.) идут отдельными пунктами.</p>
     </div>
     <div class="ccElemField"><label>Размер (px)</label><input class="ccInput" type="number" data-top="${sizeKey}" min="8" max="200" step="1" value="${escAttr(s[sizeKey])}" /></div>
+    ${
+      alignKey
+        ? `<div class="ccElemField"><label>Выравнивание</label><select class="ccInput" data-top="${alignKey}">
+             <option value="left" ${String(s[alignKey] || "center") === "left" ? "selected" : ""}>По левому краю</option>
+             <option value="center" ${String(s[alignKey] || "center") === "center" ? "selected" : ""}>По центру</option>
+             <option value="right" ${String(s[alignKey] || "center") === "right" ? "selected" : ""}>По правому краю</option>
+           </select></div>`
+        : ""
+    }
     ${sizeExtras}`;
   const secFill = renderTextStyleFillSection(st);
   const secStroke = `
@@ -2325,7 +2510,7 @@ function renderOverlayTextEditor(ov, s) {
         <select class="ccInput ccFontPickSelect" data-ov-field="font"></select>
         <button type="button" class="ccBtn ccBtn--ghost" data-ov-font-pick="1">Обзор…</button>
       </div>
-      <p class="ccElemField__hint">Тот же выбор, что у текста сцены: Windows/Fonts, fonts/ проекта или диалог.</p>
+      <p class="ccElemField__hint">Тот же выбор, что у текста сцены: системные шрифты, fonts/ проекта или выбор через диалог.</p>
     </div>
     <div class="ccElemField"><label>Размер (px)</label><input class="ccInput" type="number" data-ov-field="font_size" min="8" max="200" value="${escAttr(ov.font_size ?? 48)}" /></div>`;
   const secFill = renderTextStyleFillSection(st);
@@ -2396,6 +2581,23 @@ function renderOverlayImageEditor(ov, id) {
   `;
 }
 
+function renderPhotoElementEditor(s) {
+  const st = mergeLayerFrame(s.photo_frame);
+  return `
+    <div class="ccElemSection">Позиция и размер</div>
+    <div class="ccElemRow2">
+      <div class="ccElemField"><label>Сдвиг X (px)</label><input class="ccInput" type="number" data-top="photo_offset_x" step="1" value="${escAttr(s.photo_offset_x ?? 0)}" /></div>
+      <div class="ccElemField"><label>Сдвиг Y (px)</label><input class="ccInput" type="number" data-top="photo_offset_y" step="1" value="${escAttr(s.photo_offset_y ?? 0)}" /></div>
+    </div>
+    <div class="ccElemRow2">
+      <div class="ccElemField"><label>Ширина (px)</label><input class="ccInput" type="number" data-top="photo_width" min="16" max="${PHOTO_WIDTH_MAX}" step="1" value="${escAttr(s.photo_width ?? 1080)}" /></div>
+      <div class="ccElemField"><label>Высота (px)</label><input class="ccInput" type="number" data-top="photo_height" min="16" max="1920" step="1" value="${escAttr(s.photo_height ?? 450)}" /></div>
+    </div>
+    <label class="ccElemCheck"><input type="checkbox" data-top="photo_hidden" ${s.photo_hidden ? "checked" : ""} /> Скрыть фото / GIF политика</label>
+    ${renderLayerFrameFieldsForPrefix("photoframe", st, "верхнего фото")}
+  `;
+}
+
 function fillElementEditorBody(hit, options = {}) {
   const body = $("elementEditorBody");
   if (!body) return;
@@ -2417,6 +2619,7 @@ function fillElementEditorBody(hit, options = {}) {
   const s = state.settings;
   const hint = $("elementEditorHint");
   const titles = {
+    photo: "Фото / GIF политика",
     title: "Заголовок",
     subtitle: "Описание",
     dates: "Даты",
@@ -2440,8 +2643,9 @@ function fillElementEditorBody(hit, options = {}) {
     }
   }
 
-  if (["title", "subtitle", "dates", "watermark"].includes(hit)) {
-    body.innerHTML = renderTextElementEditor(hit, s);
+  if (["photo", "title", "subtitle", "dates", "watermark"].includes(hit)) {
+    if (hit === "photo") body.innerHTML = renderPhotoElementEditor(s);
+    else body.innerHTML = renderTextElementEditor(hit, s);
   } else if (typeof hit === "string" && hit.startsWith("overlay:")) {
     const id = hit.slice(8);
     const arr = ensureSceneOverlays(s);
@@ -2458,6 +2662,7 @@ function fillElementEditorBody(hit, options = {}) {
     body.innerHTML = `<p class="ccElemField" style="color:var(--cc-muted)">Для этого элемента отдельное окно не настроено.</p>`;
   }
   wireElemEditorColorRows(body);
+  wireBgColorModePanel(body);
   wireBgPalette(body);
   wireBgSnapReset(body);
   wireBgImagePickers(body);
@@ -2508,7 +2713,15 @@ function applyElementEditorFromModal() {
     }
   };
 
-  if (["title", "subtitle", "dates", "watermark"].includes(hit)) {
+  if (hit === "photo") {
+    assignTop(["photo_offset_x", "photo_offset_y", "photo_width", "photo_height", "photo_hidden"]);
+    s.photo_width = clamp(Math.round(Number(s.photo_width) || 1080), 16, PHOTO_WIDTH_MAX);
+    s.photo_height = clamp(Math.round(Number(s.photo_height) || 450), 16, 1920);
+    s.photo_frame = {
+      ...mergeLayerFrame(s.photo_frame),
+      ...collectLfFromModal(body, "photoframe"),
+    };
+  } else if (["title", "subtitle", "dates", "watermark"].includes(hit)) {
     const palette = collectBgPaletteFromModal(body);
     const stylePatch = collectStyleFromModalBody(body);
     Object.assign(stylePatch, collectTextFillFromModal(body));
@@ -2521,15 +2734,26 @@ function applyElementEditorFromModal() {
         "title_font_size",
         "title_font_size_min",
         "title_wrap_width",
+        "title_wrap_chars",
         "title_y",
         "title_x",
+        "title_align",
         "title_stroke",
         "title_hidden",
       ]);
     } else if (hit === "subtitle") {
-      assignTop(["subtitle_font", "subtitle_font_size", "subtitle_wrap_width", "subtitle_y", "subtitle_x", "subtitle_hidden"]);
+      assignTop([
+        "subtitle_font",
+        "subtitle_font_size",
+        "subtitle_wrap_width",
+        "subtitle_wrap_chars",
+        "subtitle_y",
+        "subtitle_x",
+        "subtitle_align",
+        "subtitle_hidden",
+      ]);
     } else if (hit === "dates") {
-      assignTop(["dates_font", "dates_font_size", "dates_y", "dates_x", "dates_hidden"]);
+      assignTop(["dates_font", "dates_font_size", "dates_y", "dates_x", "dates_align", "dates_hidden"]);
     } else if (hit === "watermark") {
       assignTop([
         "watermark_font",
@@ -2586,7 +2810,7 @@ function applyElementEditorFromModal() {
 }
 
 function openElementEditor(hit) {
-  if (hit === "card" || hit === "photo") return;
+  if (hit === "card") return;
   elementEditorHit = hit;
   fillElementEditorBody(hit);
   openElementEditorModal();
@@ -3162,14 +3386,16 @@ function collectSettingsFromForm() {
     if (!el) continue;
     s[f.key] = readFieldValue(f, el);
   }
-  const glowRoot = $("fld_glow_overlay_colors");
-  if (glowRoot) {
+  for (const f of FIELDS) {
+    if (f.kind !== "glow_palette") continue;
+    const root = $(fieldId(f.key));
+    if (!root) continue;
     const out = [];
-    glowRoot.querySelectorAll(".ccGlowPaletteHex").forEach((inp) => {
+    root.querySelectorAll(".ccGlowPaletteHex").forEach((inp) => {
       const n = normalizeColorHex(inp.value);
       if (/^#[0-9A-F]{6}$/.test(n)) out.push(n);
     });
-    s.glow_overlay_colors = out;
+    s[f.key] = out;
   }
   const parts = readOutputNamePartsFromDom();
   if (parts !== null) {
@@ -3206,7 +3432,10 @@ function pushSettingsToForm() {
     if (!(f.key in s)) continue;
     writeFieldValue(f, s[f.key]);
   }
-  paintGlowPaletteRoot($("fld_glow_overlay_colors"), s.glow_overlay_colors);
+  for (const f of FIELDS) {
+    if (f.kind !== "glow_palette") continue;
+    paintGlowPaletteRoot($(fieldId(f.key)), s[f.key]);
+  }
   const ts = $("textStylesJson");
   if (ts) {
     try {
@@ -3225,10 +3454,10 @@ function pushSettingsToForm() {
 function collectScene() {
   return {
     headline: $("headline").value || "",
-    hero: $("hero").value || "",
+    hero: "",
     bio: $("bio").value || "",
-    dates: $("dates").value || "",
-    image_path: "",
+    dates: "",
+    image_path: state.sceneImagePath || "",
     current_time: parseFloat($("timeline").value || "0"),
   };
 }
@@ -3365,9 +3594,15 @@ function layerFilmstripBackground(row) {
     return "repeating-linear-gradient(90deg,#1a2528 0 14px,#243038 14px 28px)";
   }
   if (id === "dates") {
-    const d = timelineTextStripDataUrl(($("dates") && $("dates").value) || "Даты", 200, 32);
+    const d = timelineTextStripDataUrl("Даты", 200, 32);
     if (d) return `url("${d.replace(/"/g, '\\"')}")`;
     return "repeating-linear-gradient(90deg,#252018 0 14px,#383024 14px 28px)";
+  }
+  if (id === "photo") {
+    const p = String(state.sceneImagePath || "").trim();
+    const u = p ? timelineStudioAssetUrl(p) : null;
+    if (u) return `url("${String(u).replace(/"/g, '\\"')}")`;
+    return "repeating-linear-gradient(90deg,#243244 0 16px,#2f4158 16px 32px)";
   }
   if (String(id).startsWith("overlay:")) {
     const ov = getOverlayForLayerId(id);
@@ -3395,6 +3630,7 @@ function defaultTimelineLayers(mx) {
   const d = Math.max(0.1, mx);
   return [
     { id: "background", start: 0, end: d, z: 0, visible: true },
+    { id: "photo", start: 0, end: d, z: 10, visible: true },
     { id: "card", start: 0, end: d, z: 20, visible: true },
     { id: "title", start: 0, end: d, z: 21, visible: true },
     { id: "subtitle", start: 0, end: d, z: 22, visible: true },
@@ -3409,9 +3645,18 @@ function buildTimelineLayersModel(settingsObj) {
   const mx = Math.max(0.1, parseFloat(s.duration_max ?? 10));
   const defaults = defaultTimelineLayers(mx);
   const byId = Object.fromEntries(defaults.map((r) => [r.id, { ...r }]));
+  const allowedCoreIds = new Set(defaults.map((r) => r.id));
+  const ovs = ensureSceneOverlays(s);
+  const allowedOverlayIds = new Set();
+  for (const ov of ovs) {
+    const oid = sanitizeOverlayTimelineId(ov.id);
+    if (!oid) continue;
+    allowedOverlayIds.add(`overlay:${oid}`);
+  }
   for (const r of Array.isArray(s.timeline_layers) ? s.timeline_layers : []) {
     if (!r || !r.id) continue;
     const id = String(r.id);
+    if (!allowedCoreIds.has(id) && !allowedOverlayIds.has(id)) continue;
     const prev = byId[id] || { id, start: 0, end: mx, z: 50, visible: true };
     let st = parseFloat(r.start);
     let en = parseFloat(r.end);
@@ -3428,14 +3673,9 @@ function buildTimelineLayersModel(settingsObj) {
     };
     if (byId[id].end <= byId[id].start) byId[id].end = Math.min(mx, byId[id].start + 0.2);
   }
-  const ovs = ensureSceneOverlays(s);
-  for (const ov of ovs) {
-    const oid = sanitizeOverlayTimelineId(ov.id);
-    if (!oid) continue;
-    const lid = `overlay:${oid}`;
+  for (const lid of allowedOverlayIds) {
     if (!byId[lid]) byId[lid] = { id: lid, start: 0, end: mx, z: 120, visible: true };
   }
-  delete byId.photo;
   if (!byId.glow) {
     byId.glow = { id: "glow", start: 0, end: mx, z: 10000, visible: true };
   }
@@ -3452,6 +3692,8 @@ function buildTimelineLayersModel(settingsObj) {
 function timelineLayerTitle(id) {
   const m = {
     background: "Фон",
+    photo: "Фото / GIF",
+    card: "Карточка",
     glow: "Блик / засвет",
     title: "Заголовок",
     subtitle: "Описание",
@@ -3665,7 +3907,7 @@ function renderTimelineLayersEditor() {
   const pps = timelineProPixelsPerSecond();
   const innerW = Math.max(8, mx * pps);
   const rows = [...(state.settings.timeline_layers || [])]
-    .filter((r) => r && r.id !== "card")
+    .filter((r) => r)
     .sort((a, b) => b.z - a.z);
 
   panel.innerHTML = "";
@@ -3955,8 +4197,8 @@ function clientToPreviewVideo(clientX, clientY) {
 }
 
 function pickHitboxAt(vx, vy) {
-  // Текст карточки — раньше декоративных overlay, чтобы тянуть/менять ширину описания, а не слой с колесом зодиака.
-  const order = ["watermark", "title", "dates", "subtitle", ...overlayHitKeys()];
+  // Текст карточки — раньше декоративных overlay, чтобы тянуть/менять ширину описания.
+  const order = ["watermark", "title", "dates", "subtitle", ...overlayHitKeys(), "photo"];
   for (const key of order) {
     const b = previewHitboxes[key];
     if (!b || b.length !== 4) continue;
@@ -3970,7 +4212,7 @@ function redrawPreviewHitboxes() {
   const g = $("previewHitboxGroup");
   if (!g) return;
   g.innerHTML = "";
-  const order = ["title", "dates", "subtitle", "watermark", ...overlayHitKeys()];
+  const order = ["photo", "title", "dates", "subtitle", "watermark", ...overlayHitKeys()];
   let gx = 0;
   let gy = 0;
   if (previewGhostOffset && previewSelected) {
@@ -4033,6 +4275,9 @@ function nudgeLayoutFromPreview(sel, dx, dy) {
   } else if (sel === "watermark") {
     s.watermark_x = clamp((s.watermark_x || 0) + dx, -200, 1200);
     s.watermark_y = clamp((s.watermark_y || 0) + dy, -200, 2200);
+  } else if (sel === "photo") {
+    s.photo_offset_x = clamp((s.photo_offset_x || 0) + dx, -2000, 2000);
+    s.photo_offset_y = clamp((s.photo_offset_y || 0) + dy, -2000, 2000);
   } else if (typeof sel === "string" && sel.startsWith("overlay:")) {
     const id = sel.slice(8);
     const arr = ensureSceneOverlays(s);
@@ -4069,6 +4314,10 @@ function wheelLayoutFromPreview(sel, delta, shiftKey) {
     } else s.subtitle_font_size = clamp((s.subtitle_font_size || 40) + d, 24, 84);
   }
   else if (sel === "watermark") s.watermark_font_size = clamp((s.watermark_font_size || 24) + d, 12, 120);
+  else if (sel === "photo") {
+    if (shiftKey) s.photo_width = clamp((Number(s.photo_width) || 1080) + d * 10, 16, PHOTO_WIDTH_MAX);
+    else s.photo_height = clamp((Number(s.photo_height) || 450) + d * 10, 16, 1920);
+  }
   else if (typeof sel === "string" && sel.startsWith("overlay:")) {
     const id = sel.slice(8);
     const arr = ensureSceneOverlays(s);
@@ -4122,6 +4371,8 @@ function resizeLayoutFromPreview(sel, edges, dx, dy, hitbox) {
   const rwWrap = (x) => clamp(Math.round(x), 0, 1080);
   const rOvImgW = (x) => clamp(Math.round(x), 32, 1080);
   const rOvImgH = (x) => clamp(Math.round(x), 32, 1920);
+  const rPhotoW = (x) => clamp(Math.round(x), 16, PHOTO_WIDTH_MAX);
+  const rPhotoH = (x) => clamp(Math.round(x), 16, 1920);
   const rfz = (x, lo, hi) => clamp(Math.round(x), lo, hi);
   const h = edges && edges.h;
   const v = edges && edges.v;
@@ -4159,6 +4410,11 @@ function resizeLayoutFromPreview(sel, edges, dx, dy, hitbox) {
   } else if (sel === "watermark") {
     const d = Math.abs(dx) > Math.abs(dy) ? Math.round(dx / 10) : -Math.round(dy / 10);
     if (h || v) s.watermark_font_size = rfz((Number(s.watermark_font_size) || 24) + d, 12, 120);
+  } else if (sel === "photo") {
+    if (h === "r") s.photo_width = rPhotoW((Number(s.photo_width) || 1080) + dx);
+    if (h === "l") s.photo_width = rPhotoW((Number(s.photo_width) || 1080) - dx);
+    if (v === "b") s.photo_height = rPhotoH((Number(s.photo_height) || 450) + dy);
+    if (v === "t") s.photo_height = rPhotoH((Number(s.photo_height) || 450) - dy);
   } else if (typeof sel === "string" && sel.startsWith("overlay:")) {
     const id = sel.slice(8);
     const arr = ensureSceneOverlays(s);
@@ -4208,6 +4464,11 @@ function openTimelineLayerInLeftPanel(layerId) {
 
   if (["title", "subtitle", "dates", "watermark"].includes(id)) {
     hitFromCore(id);
+    document.querySelector('.ccMediaTab[data-media-tab="main"]')?.click();
+    return;
+  }
+  if (id === "photo") {
+    hitFromCore("photo");
     document.querySelector('.ccMediaTab[data-media-tab="main"]')?.click();
     return;
   }
@@ -4495,27 +4756,82 @@ function schedulePreviewFast() {
 async function loadPresetFromServer() {
   const data = await apiJson("/api/settings");
   state.settings = data && typeof data === "object" ? data : {};
+  mergeOllamaSettingsDefaults(state.settings);
+  let normalizedTopics = false;
+  const tp = String(state.settings.headline_topics || "").trim();
+  const tpLow = tp.toLowerCase();
+  if (!tp || tpLow.includes("зодиак") || tpLow.includes("знаков")) {
+    state.settings.headline_topics = POLITICAL_HEADLINE_TOPICS_DEFAULT;
+    normalizedTopics = true;
+  }
   pushSettingsToForm();
+  if (normalizedTopics) {
+    await apiJson("/api/settings", { method: "POST", body: JSON.stringify(state.settings) });
+    appendLog("[ui] Темы обновлены: старый зодиак-список заменён на политический.");
+  }
   renderSceneOverlaysList();
 }
 
-/** Слияние импорта пресета с текущим state (частичный JSON из файла не затирает всё). */
+function cloneJsonValue(v) {
+  return JSON.parse(JSON.stringify(v));
+}
+
+function applySceneSnapshot(sceneLike) {
+  if (!sceneLike || typeof sceneLike !== "object" || Array.isArray(sceneLike)) return;
+  const hl = $("headline");
+  const bio = $("bio");
+  const tl = $("timeline");
+  if (hl && sceneLike.headline != null) hl.value = String(sceneLike.headline || "");
+  if (bio && sceneLike.bio != null) bio.value = String(sceneLike.bio || "");
+  state.sceneImagePath = String(sceneLike.image_path || "").trim();
+  if (tl && sceneLike.current_time != null) {
+    const t = Number(sceneLike.current_time);
+    if (Number.isFinite(t)) tl.value = String(Math.max(0, t));
+  }
+}
+
+function buildPresetSnapshot() {
+  collectSettingsFromForm();
+  return {
+    kind: "politics_studio_preset",
+    version: 2,
+    saved_at: new Date().toISOString(),
+    settings: cloneJsonValue(state.settings || {}),
+    scene: collectScene(),
+  };
+}
+
+/**
+ * Импорт пресета:
+ * - Новый формат (kind/version/settings/scene): settings восстанавливаются 1:1.
+ * - Legacy-формат (голый JSON настроек): мягкий merge с текущим, чтобы старые файлы не ломались.
+ */
 function applyImportedPresetObject(imported) {
   if (!imported || typeof imported !== "object" || Array.isArray(imported)) {
-    throw new Error("Нужен JSON-объект с настройками");
+    throw new Error("Нужен JSON-объект пресета");
+  }
+  const isNewSnapshot = imported.settings && typeof imported.settings === "object" && !Array.isArray(imported.settings);
+  if (isNewSnapshot) {
+    const next = cloneJsonValue(imported.settings);
+    mergeOllamaSettingsDefaults(next);
+    state.settings = next;
+    applySceneSnapshot(imported.scene);
+    return;
   }
   const cur = state.settings && typeof state.settings === "object" ? state.settings : {};
-  const next = { ...cur, ...imported };
-  if (imported.text_styles && typeof imported.text_styles === "object" && !Array.isArray(imported.text_styles)) {
-    next.text_styles = { ...(cur.text_styles || {}), ...imported.text_styles };
+  const legacy = cloneJsonValue(imported);
+  const next = { ...cur, ...legacy };
+  if (legacy.text_styles && typeof legacy.text_styles === "object" && !Array.isArray(legacy.text_styles)) {
+    next.text_styles = { ...(cur.text_styles || {}), ...legacy.text_styles };
   }
+  mergeOllamaSettingsDefaults(next);
   state.settings = next;
 }
 
 async function savePresetToLocalFile() {
-  collectSettingsFromForm();
+  const snap = buildPresetSnapshot();
   try {
-    const r = await studio({ cmd: "save_preset_file", settings: state.settings });
+    const r = await studio({ cmd: "save_preset_file", settings: snap.settings, payload: snap });
     if (r && (r.cancelled || r.error === "cancelled")) return;
     if (!r || !r.ok) {
       appendLog(`[ui] сохранить пресет: ${(r && r.error) || "нет ответа"}`);
@@ -4556,16 +4872,16 @@ async function checkHealth() {
 async function randomHoroscope() {
   const r = await studio({ cmd: "random_politician" });
   if (!r.ok) {
-    appendLog(`[random_horoscope] ${r.error || JSON.stringify(r)}`);
+    appendLog(`[random_scene] ${r.error || JSON.stringify(r)}`);
     return;
   }
   const sc = r.scene || {};
   $("headline").value = sc.headline || "";
-  $("hero").value = sc.hero || "";
-  $("dates").value = sc.dates || "";
   $("bio").value = sc.bio || "";
+  state.sceneImagePath = String(sc.image_path || "").trim();
   if (sc.current_time != null) $("timeline").value = String(sc.current_time);
   updateTimeReadout();
+  renderTimelineLayersEditor();
   await runPreview();
 }
 
@@ -4573,7 +4889,7 @@ async function shuffleZodiac() {
   await studioSync();
   const r = await studio({ cmd: "resummarize" });
   if (!r.ok) {
-    appendLog(`[shuffle_zodiac] ${r.error || JSON.stringify(r)}`);
+    appendLog(`[refresh_description] ${r.error || JSON.stringify(r)}`);
     return;
   }
   $("bio").value = r.bio || "";
@@ -4634,9 +4950,15 @@ async function startRenderFromModal() {
   }
   const resolution = $("exportResolution")?.value || "1080p";
   const fps = Math.max(1, parseInt($("exportFps")?.value || "30", 10));
-  const video_bitrate_mbps = Math.max(1, parseInt($("exportBitrate")?.value || "5", 10));
+  const brMinRaw = parseInt($("exportBitrateMin")?.value || "5", 10);
+  const brMaxRaw = parseInt($("exportBitrateMax")?.value || "8", 10);
+  const video_bitrate_min_mbps = Math.max(1, Math.min(20, Number.isFinite(brMinRaw) ? brMinRaw : 5));
+  const video_bitrate_max_mbps = Math.max(1, Math.min(20, Number.isFinite(brMaxRaw) ? brMaxRaw : 8));
   const count = Math.max(1, parseInt($("exportVideoCount")?.value || "1", 10));
   const mode = count > 1 ? "batch" : "current";
+
+  // Запоминаем последнюю папку экспорта в пресете.
+  if (saveFolder) state.settings.video_output_dir = saveFolder;
 
   closeExportSettingsModal();
   renderVideoTotal = count;
@@ -4644,7 +4966,9 @@ async function startRenderFromModal() {
   openRenderLogModal(true);
   await savePresetToServer();
   await studioSync();
-  const payload = { mode, resolution, fps, video_bitrate_mbps };
+  const payload = { mode, resolution, fps };
+  payload.video_bitrate_min_mbps = Math.min(video_bitrate_min_mbps, video_bitrate_max_mbps);
+  payload.video_bitrate_max_mbps = Math.max(video_bitrate_min_mbps, video_bitrate_max_mbps);
   if (saveFolder) payload.save_folder = saveFolder;
   if (mode === "batch") payload.count = count;
   const dminStr = ($("exportDurationMin")?.value || "").trim();
@@ -4840,11 +5164,6 @@ function wire() {
   $("btnMenuStub")?.addEventListener("click", (e) => e.preventDefault());
 
   $("headline").addEventListener("input", () => {
-    schedulePreviewSlow();
-    renderTimelineLayersEditor();
-  });
-  $("hero").addEventListener("input", schedulePreviewSlow);
-  $("dates").addEventListener("input", () => {
     schedulePreviewSlow();
     renderTimelineLayersEditor();
   });

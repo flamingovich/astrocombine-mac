@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Гороскоп-студия</title>
+    <title>Политик-студия</title>
     <link rel="stylesheet" href="/assets/styles.css" />
   </head>
   <body class="theme-capcut">
@@ -13,7 +13,7 @@
         <div class="ccTopBar__left">
           <button type="button" class="ccIconBtn" id="btnMenuStub" title="Меню" aria-label="Меню">☰</button>
           <div class="ccLogoMark" aria-hidden="true"></div>
-          <span class="ccBrand">Гороскоп-студия</span>
+          <span class="ccBrand">Политик-студия</span>
         </div>
         <div class="ccTopBar__center">
           <input
@@ -82,31 +82,23 @@
               </div>
               <div id="mediaPaneMain" class="ccMediaPane ccMediaPane--main">
                 <div class="field">
-                  <label for="headline">Заголовок на карточке</label>
+                  <label for="headline">Заголовок</label>
                   <input id="headline" class="ccInput" type="text" autocomplete="off" spellcheck="false" />
                 </div>
                 <div class="field">
-                  <label for="hero">Метка для файла (опционально)</label>
-                  <input id="hero" class="ccInput" type="text" autocomplete="off" />
-                </div>
-                <div class="field">
-                  <label for="dates">Подпись на карточке (даты / подзаголовок)</label>
-                  <input id="dates" class="ccInput" type="text" autocomplete="off" />
-                </div>
-                <div class="field">
-                  <label for="bio">12 знаков зодиака в случайном порядке (описание)</label>
+                  <label for="bio">Описание</label>
                   <textarea id="bio" class="ccTextarea"></textarea>
                 </div>
                 <div class="ccBtnRow">
                   <button id="btnRandom" type="button" class="ccBtn ccBtn--teal ccBtn--grow">Случайный ролик</button>
-                  <button id="btnResum" type="button" class="ccBtn ccBtn--ghost ccBtn--grow">Перемешать знаки</button>
+                  <button id="btnResum" type="button" class="ccBtn ccBtn--ghost ccBtn--grow">Обновить описание</button>
                   <button
                     id="btnGenHeadline"
                     type="button"
                     class="ccBtn ccBtn--ghost ccBtn--grow"
-                    title="Случайная строка из списка тем заголовков"
+                    title="Случайная строка из списка тем"
                   >
-                    Тема заголовка
+                    Обновить заголовок
                   </button>
                 </div>
                 <button id="btnApplyParams" type="button" class="ccBtn ccBtn--secondary" style="width: 100%; margin-top: 10px">
@@ -283,18 +275,18 @@
                 <option value="480p">480p (480×854)</option>
               </select>
             </div>
-            <div class="ccExportFieldRow ccExportFieldRow--split">
+            <div class="ccExportFieldRow ccExportFieldRow--split ccExportFieldRow--wrap">
               <span class="ccExportField__lab">Битрейт (Мбит/с)</span>
-              <select id="exportBitrate" class="ccInput ccInput--pill">
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5" selected>5</option>
-                <option value="6">6</option>
-                <option value="7">7</option>
-                <option value="8">8</option>
-                <option value="9">9</option>
-                <option value="10">10</option>
-              </select>
+              <div class="ccExportDurPair">
+                <label class="ccExportMiniLab"
+                  >от
+                  <input id="exportBitrateMin" class="ccInput ccInput--pill ccInput--numnarrow" type="number" step="1" min="1" max="20" value="5" />
+                </label>
+                <label class="ccExportMiniLab"
+                  >до
+                  <input id="exportBitrateMax" class="ccInput ccInput--pill ccInput--numnarrow" type="number" step="1" min="1" max="20" value="8" />
+                </label>
+              </div>
             </div>
             <div class="ccExportFieldRow ccExportFieldRow--split">
               <span class="ccExportField__lab">FPS</span>

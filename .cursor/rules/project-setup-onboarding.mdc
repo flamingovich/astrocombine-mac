@@ -1,0 +1,25 @@
+---
+description: Project onboarding and local setup requirements
+alwaysApply: true
+---
+
+# Politics Studio onboarding
+
+When you analyze or edit this repository, assume this runtime:
+
+- Node.js LTS + npm (`npm install`, then `npm run dev`)
+- Python 3.10+ with venv
+- Python deps: `pip install -r requirements-server.txt pillow numpy proglog`
+- System dependency: `ffmpeg` (required by moviepy render pipeline)
+
+AI integration in this project uses local Ollama:
+
+- Default API: `http://127.0.0.1:11434`
+- Default model in code: `qwen2.5:14b`
+- Verify with: `ollama list`
+
+Behavior expectations:
+
+- If Ollama is unavailable, keep project usable and preserve fallback behavior.
+- Do not suggest committing generated local videos from `Videos/` or `videos/`.
+- Presets in `presets/` are part of the product and can be committed.

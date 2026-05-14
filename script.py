@@ -6,40 +6,29 @@ from pathlib import Path
 
 PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif")
 
-# Двенадцать знаков зодиака (фиксированный набор; порядок в ролике — случайный).
-ZODIAC_SIGNS_RU: tuple[str, ...] = (
-    "Овен",
-    "Телец",
-    "Близнецы",
-    "Рак",
-    "Лев",
-    "Дева",
-    "Весы",
-    "Скорпион",
-    "Стрелец",
-    "Козерог",
-    "Водолей",
-    "Рыбы",
-)
-
-_RANK_LINE_STYLES: tuple[str, ...] = (
-    "{rank} МЕСТО - {name}",
-    "{rank} РАНГ - {name}",
-    "{rank} - {name}",
-    "ТОП {rank} - {name}",
-)
-
 _DEFAULT_HEADLINE_TOPICS = (
-    "Топ знаков зодиака по богатству\n"
-    "Кого ждёт удача на этой неделе\n"
-    "Самые сильные знаки зодиака\n"
-    "Рейтинг знаков по интуиции\n"
-    "Кто из знаков блистает в любви"
+    "Пока мы платим больше, они обещают меньше\n"
+    "Очередной день, когда народ снова платит за чужой комфорт\n"
+    "Цены вверх, зарплаты вниз, отчёты снова красивые\n"
+    "У людей долги, у системы новые красивые планы\n"
+    "Пока мы экономим на еде, нам рассказывают про успехи"
+)
+
+_DESCRIPTION_PLACEHOLDERS: tuple[str, ...] = (
+    "Народ уже устал тянуть всё на себе: цены растут, зарплаты стоят, а обещания каждый раз как под копирку. "
+    "Сверху снова красивые отчёты и разговоры про стабильность. "
+    "На деле обычным людям становится только тяжелее.",
+    "Платёжки больше, продукты дороже, лекарства недоступнее, а у людей всё меньше запаса прочности. "
+    "При этом нам снова рассказывают, что всё под контролем. "
+    "Ощущение, будто реальную жизнь никто не хочет замечать.",
+    "Пока люди считают каждую покупку, вокруг продолжают говорить о росте и достижениях. "
+    "Но в кошельке этот рост почему-то не появляется. "
+    "Хочется не новых лозунгов, а нормальной жизни без вечного стресса.",
 )
 
 
 class HoroscopeStudioCreator:
-    """Контент для вертикальных роликов про гороскоп: темы заголовков + 12 знаков без нейросетей."""
+    """Контент для вертикальных политических роликов: заголовок, описание, медиа."""
 
     def __init__(self) -> None:
         self.video_width = 1080
@@ -47,11 +36,11 @@ class HoroscopeStudioCreator:
         self.duration = 7
         self.df = None
         self.name_prefixes = [
-            "Гороскоп",
-            "Звёзды говорят",
-            "Зодиак",
-            "Астрология",
-            "Судьба по знакам",
+            "Политика",
+            "Без цензуры",
+            "Голос людей",
+            "Реальность дня",
+            "Народный взгляд",
         ]
         self.match_report_path = Path("match_report.txt")
 
@@ -67,13 +56,9 @@ class HoroscopeStudioCreator:
             lines = self.parse_topic_lines(_DEFAULT_HEADLINE_TOPICS)
         return random.choice(lines)
 
-    def build_zodiac_description(self, separator: str = "\n") -> str:
-        """12 знаков в случайном порядке; на ролик выбирается 1 стиль ранга и применяется ко всем строкам."""
-        signs = list(ZODIAC_SIGNS_RU)
-        random.shuffle(signs)
-        line_style = random.choice(_RANK_LINE_STYLES)
-        lines = [line_style.format(rank=i, name=name.upper()) for i, name in enumerate(signs, start=1)]
-        return separator.join(lines)
+    def build_political_description(self) -> str:
+        """Временная заглушка описания под политический ролик."""
+        return random.choice(_DESCRIPTION_PLACEHOLDERS)
 
     def load_hashtag_lines(self) -> list[str]:
         if os.path.exists("hashtags.txt"):
@@ -82,7 +67,7 @@ class HoroscopeStudioCreator:
         else:
             tags = []
         if not tags:
-            tags = ["#гороскоп", "#зодиак", "#астрология", "#звёзды", "#судьба"]
+            tags = ["#политика", "#новости", "#мнение", "#общество", "#голоснарода"]
         return tags
 
     def sample_hashtags(self, n: int) -> list[str]:
@@ -104,27 +89,34 @@ class HoroscopeStudioCreator:
         files = [f for f in os.listdir(folder) if str(f).lower().endswith(exts)]
         return os.path.join(folder, random.choice(files)) if files else None
 
+    def get_random_politician_media(self) -> str | None:
+        """Случайный файл из папки photos (картинка или GIF)."""
+        return self.get_random_file("photos", PHOTO_EXTENSIONS)
+
     def init_match_report(self) -> None:
         self.match_report_path.write_text(
             "=== Match report ===\n"
-            "Раньше здесь логировалось сопоставление имён с Excel; для гороскопов не используется.\n\n",
+            "Раньше здесь логировалось сопоставление имён с Excel; сейчас не используется.\n\n",
             encoding="utf-8",
         )
 
     def ensure_excel_cache(self) -> None:
-        """Заглушка: таблица политиков больше не используется."""
+        """Заглушка обратной совместимости."""
         return None
 
     def get_politician_bio_from_table(self, hero_name: str):
         return None, None
 
     def build_complaint_description(self, _name: str) -> str:
-        """Совместимость: вместо текста «от народа» — знаки зодиака."""
-        return self.build_zodiac_description()
+        """Совместимость: возвращает заглушку описания."""
+        return self.build_political_description()
 
     def get_random_politician_photo(self):
-        """Совместимость API: фото в гороскопах не используется."""
-        return None, "Фото не используется (режим гороскопа)"
+        """Совместимость API: случайный медиа-файл из photos."""
+        media = self.get_random_politician_media()
+        if media:
+            return media, "ok"
+        return None, "Папка photos пуста"
 
 
 # Обратная совместимость импортов из старых скриптов.

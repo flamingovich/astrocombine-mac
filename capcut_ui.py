@@ -7,6 +7,8 @@ import os
 import random
 import re
 import shutil
+import urllib.error
+import urllib.request
 import sys
 import textwrap
 import tkinter as tk
@@ -26,7 +28,7 @@ from moviepy.editor import (
     ColorClip,
     CompositeVideoClip,
     ImageClip,
-    ImageSequenceClip,
+    concatenate_videoclips,
     VideoClip,
     VideoFileClip,
     vfx,
@@ -52,7 +54,7 @@ _ZODIAC_SIGN_TO_EMOJI_STEM: dict[str, str] = {
 }
 
 # -----------------------------------------------------------------------------
-# Гороскоп-студия — Electron + web/. Этот файл — движок превью/рендера и
+# Политик-студия — Electron + web/. Этот файл — движок превью/рендера и
 # опциональный legacy Tk UI; главный UX в web/.
 # -----------------------------------------------------------------------------
 
@@ -125,6 +127,7 @@ def default_text_styles():
         "bg_enabled": False,
         "bg_color": "#000000",
         "bg_colors": [],
+        "bg_color_mode": "solid",
         "bg_opacity": 80,
         "bg_padding_x": 12,
         "bg_padding_y": 8,
@@ -151,6 +154,8 @@ def default_text_styles():
         "bg_use_fixed_inner_box": False,
         "bg_fixed_width": 0,
         "bg_fixed_height": 0,
+        # True = отдельная подложка под каждую строку (по её фактической длине), False = один общий блок.
+        "bg_per_line_boxes": False,
         # True = подложка как раньше по bbox текста; False = запомнить размер (bg_snap_inner_*) при первом кадре, шрифт меняется отдельно.
         "bg_resizes_with_font": True,
         "bg_snap_inner_w": 0,
@@ -222,10 +227,37 @@ class UiSettings:
     subtitle_y: int = 430
     title_x: int = 0
     subtitle_x: int = 0
+    title_align: str = "center"
+    subtitle_align: str = "center"
     # 0 = ширина колонки заголовка как раньше (кадр минус 2×side_padding); иначе макс. ширина текста заголовка, px.
     title_wrap_width: int = 0
+    # 0 = без ограничения; иначе перенос строки заголовка по лимиту символов (перед проверкой ширины в px).
+    title_wrap_chars: int = 0
+    # Максимум строк заголовка на превью и в рендере карточки (перенос + «…» на последней строке при переполнении).
+    title_max_lines: int = 3
     # 0 = как раньше (кадр − 2×side_padding); иначе макс. ширина текста описания, px.
     subtitle_wrap_width: int = 0
+    # 0 = без ограничения; иначе перенос строки по лимиту символов (до расчёта по ширине в px).
+    subtitle_wrap_chars: int = 0
+    # Доп. префикс под основным описанием (например CTA/подпись).
+    subtitle_prefix_enabled: bool = False
+    subtitle_prefix_text: str = ""
+    # Сколько «пустых строк» отступить после описания перед префиксом.
+    subtitle_prefix_gap_lines: int = 2
+    # inherit = полностью как у описания; custom = отдельный стиль префикса.
+    subtitle_prefix_style_mode: str = "inherit"
+    # Если не пусто — использовать этот шрифт для префикса (даже в режиме inherit).
+    subtitle_prefix_font: str = ""
+    # 0 = взять subtitle_font_size.
+    subtitle_prefix_font_size: int = 0
+    # Для custom-режима: solid / palette.
+    subtitle_prefix_text_fill_mode: str = "solid"
+    subtitle_prefix_color: str = "#FFFFFF"
+    subtitle_prefix_text_colors: list[str] = field(default_factory=list)
+    subtitle_prefix_bg_enabled: bool = False
+    subtitle_prefix_bg_color_mode: str = "solid"
+    subtitle_prefix_bg_color: str = "#000000"
+    subtitle_prefix_bg_colors: list[str] = field(default_factory=list)
     side_padding: int = 90
     title_color: str = "#FFFFFF"
     title_stroke: str = "#000000"
@@ -244,7 +276,7 @@ class UiSettings:
     watermark_font: str = "fonts/tahomabd.ttf"
     subtitle_line_spacing: int = 10
     subtitle_max_words: int = 200
-    # Минимум «слов» в описании для экспорта (12 знаков зодиака — 12 токенов при переносах строк).
+    # Минимум слов в описании для экспорта.
     subtitle_min_words: int = 10
     duration_min: float = 6.5
     duration_max: float = 7.5
@@ -252,15 +284,17 @@ class UiSettings:
     photo_zoom_end: float = 1.2
     # Ложь: фото без зума по времени (масштаб = photo_zoom_start на всём ролике).
     photo_animation_enabled: bool = True
-    # Движение фото: zoom (зум от центра слота), slide_left / slide_right — горизонтальная панорама кропа.
-    photo_anim_kind: str = "zoom"
-    # При экспорте каждый раз случайный режим из zoom / slide_left / slide_right (поле photo_anim_kind — для превью и когда выкл.).
+    # Движение фото: zoom_in / zoom_out (зум от центра слота), slide_left / slide_right — горизонтальная панорама кропа.
+    # "zoom" поддерживается как alias для "zoom_in" (совместимость старых пресетов).
+    photo_anim_kind: str = "zoom_in"
+    # При включении случайно выбирается один из slide_left / slide_right / zoom_in / zoom_out.
     photo_anim_random: bool = False
     # Минимальный запас кропа для слайда (px к ширине слота); вместе с zoom_start задаёт масштаб «с запасом».
     photo_slide_range_px: int = 120
     dates_font_size: int = 44
     dates_y: int = 270
     dates_x: int = 0
+    dates_align: str = "center"
     dates_color: str = "#303030"
     watermark_text: str = ""
     watermark_font_size: int = 34
@@ -280,12 +314,65 @@ class UiSettings:
     force_caps: bool = False
     # По одной теме на строку; для ролика случайно выбирается одна строка как заголовок карточки.
     headline_topics: str = (
-        "Топ знаков зодиака по богатству\n"
-        "Кого ждёт удача на этой неделе\n"
-        "Самые сильные знаки зодиака\n"
-        "Рейтинг знаков по интуиции\n"
-        "Кто из знаков блистает в любви"
+        "Пока мы считаем копейки, нам рассказывают про рекорды\n"
+        "Цены растут быстрее зарплат - кто за это ответит\n"
+        "У людей кредиты, у чиновников новые обещания\n"
+        "Нас просят потерпеть, пока кто-то богатеет\n"
+        "Платежки выше, качество жизни ниже - совпадение\n"
+        "Когда обещают стабильность, почему кошелек пустеет\n"
+        "Чья реальность в отчетах и чья на кассе магазина\n"
+        "Мы экономим на еде, они экономят на правде\n"
+        "Кому выгодно, чтобы люди молчали о бедности\n"
+        "Почему простые люди платят за чужие ошибки\n"
+        "Пока народ затягивает пояса, элита расширяет границы комфорта\n"
+        "Говорят все под контролем - тогда почему жить тяжелее\n"
+        "Новые налоги, старые проблемы - где выход\n"
+        "Когда честный труд не спасает от бедности\n"
+        "Кто выигрывает, пока большинство выживает"
     )
+    summary_prompt: str = (
+        "Ты — текст под заголовком для вертикального политического ролика на русском. Заголовки у нас часто заряженные: "
+        "капс, крик, «нас обчистили», «нас обокрали», выживание вместо жизни, народ против наживы сверху, иногда цитата в лоб. "
+        "Твой текст — не второй заголовок и не сухая выжимка: это живой голос простого человека (зарплата до зарплаты, пенсия, смены, кредит, счета) — "
+        "как на кухне или в очереди, не как ведущий и не как пресс-служба.\n\n"
+        "Входные данные:\n"
+        "- Заголовок на экране (зритель уже прочитал): {topic}\n"
+        "- Вариация (случайный сдвиг формулировок): {nonce}\n\n"
+        "Задача:\n"
+        "Разверни злость и боль заголовка в быт и конкретику, чтобы обычный человек кивнул: да, это про меня. "
+        "Не начинай с пересказа заголовка теми же словами и не дублируй первым предложением его крик или ту же цитату — "
+        "сразу уводи в новое: что это значит в кошельке, в семье, на работе, во сне от долгов.\n\n"
+        "Ось (держи одну, без расползания):\n"
+        "— обида на несправедливость: чиновники, депутаты, олигархи и связанные с ними живут иначе, а народ платит, терпит и стесняется даже болеть;\n"
+        "— минимум один ощутимый бытовой штрих: тарифы, аренда, касса, зарплата до вечера, кредитка, «отложить не на что», страх перед завтра.\n\n"
+        "Тон:\n"
+        "— можно жёстко и громко по смыслу (грабёж, развод, наглый разрыв), но без лекции и без «умного» тона; холодная ирония ок.\n"
+        "— одна центральная мысль на весь текст.\n"
+        "— не превращай весь ответ в длинную официальную цитату с атрибуцией «заявил депутат» — это убивает живость; "
+        "если нужна реплика в кавычках, максимум короткая врезка, не полэкрана.\n"
+        "— в конце можно один короткий вопрос к зрителю для комментов — не обязательно.\n\n"
+        "Жёсткие требования:\n"
+        "— ровно 45–55 слов (не меньше 45 и не больше 55).\n"
+        "— только русский; разговорно, эмоционально, без канцелярита и без клише СМИ.\n"
+        "— без списков, хештегов, эмодзи, без отдельной строки-заголовка внутри ответа.\n"
+        "— не используй: видео, ролик, шортс, в этом тексте/посте/материале, подписывайтесь, ставьте лайк.\n"
+        "— избегай пустой воды: «правда в том», «сколько можно быть слепым», «вот тебе и демократия», «для одних закон — для других» без привязки к быту.\n"
+        "— каждый ответ новый по углу (вариация {nonce}): контраст слова и реальности, личная цена, двойной стандарт, мелочь как симптом.\n\n"
+        "Выведи только готовый текст без пояснений."
+    )
+    headline_gen_prompt: str = (
+        "Ты пишешь заголовок для короткого политического ролика.\n"
+        "Тема: {topic}\n"
+        "Описание:\n{bio}\n\n"
+        "Придумай ОДИН цепляющий заголовок на русском (до 12 слов), без кавычек и без пояснений."
+    )
+    ollama_model: str = "qwen2.5:14b"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_timeout_sec: int = 120
+    # Сэмплинг Ollama (/api/generate): выше temperature / top_p — разнообразнее и резче; repeat_penalty — меньше повторов шаблонов.
+    ollama_temperature: float = 1.08
+    ollama_top_p: float = 0.96
+    ollama_repeat_penalty: float = 1.22
     # Пул хештегов для имени файла (каждая строка — отдельный тег). Пусто = как hashtags.txt.
     hashtags_pool: str = ""
     text_styles: dict = field(default_factory=default_text_styles)
@@ -295,7 +382,7 @@ class UiSettings:
     subtitle_hidden: bool = False
     dates_hidden: bool = False
     watermark_hidden: bool = False
-    photo_hidden: bool = True
+    photo_hidden: bool = False
     card_hidden: bool = False
     # Имя выходного mp4: конструктор из блоков (output_name_parts) + пулы; output_name_template — запас для старых пресетов
     output_name_parts: list = field(default_factory=default_output_name_parts)
@@ -334,7 +421,7 @@ class CapCutLikeUi:
     def __init__(self, headless: bool = False):
         self.headless = bool(headless)
         self.root = tk.Tk()
-        self.root.title("Гороскоп-студия")
+        self.root.title("Политик-студия")
         if self.headless:
             self.root.withdraw()
             self.root.overrideredirect(True)
@@ -399,8 +486,11 @@ class CapCutLikeUi:
             "title_font_size",
             "title_font_size_min",
             "title_wrap_width",
+            "title_wrap_chars",
+            "title_max_lines",
             "subtitle_font_size",
             "subtitle_wrap_width",
+            "subtitle_wrap_chars",
             "title_y",
             "subtitle_y",
             "title_x",
@@ -419,6 +509,12 @@ class CapCutLikeUi:
             "watermark_opacity",
             "watermark_x",
             "watermark_y",
+            "ollama_model",
+            "ollama_base_url",
+            "ollama_timeout_sec",
+            "ollama_temperature",
+            "ollama_top_p",
+            "ollama_repeat_penalty",
         ]:
             self.controls[key] = tk.StringVar(value=str(getattr(self.settings, key)))
 
@@ -557,7 +653,7 @@ class CapCutLikeUi:
     def build_ui(self):
         topbar = ttk.Frame(self.root, style="Panel.TFrame", padding=(12, 8))
         topbar.pack(fill="x")
-        ttk.Label(topbar, text="Гороскоп-студия", style="PanelTitle.TLabel").pack(side="left")
+        ttk.Label(topbar, text="Политик-студия", style="PanelTitle.TLabel").pack(side="left")
         ttk.Label(topbar, text="ПРОЕКТНЫЙ МОНТАЖ / VERTICAL 9:16", style="Section.TLabel").pack(side="left", padx=12)
         top_right = ttk.Frame(topbar, style="Panel.TFrame")
         top_right.pack(side="right")
@@ -623,7 +719,7 @@ class CapCutLikeUi:
         btns = ttk.Frame(left, style="Panel.TFrame")
         btns.pack(fill="x", pady=10, padx=8)
         ttk.Button(btns, text="Случайный", image=self.icons["random"], compound="left", style="Accent.TButton", command=self.pick_random_horoscope).pack(side="left")
-        ttk.Button(btns, text="Перемешать знаки", image=self.icons["text"], compound="left", command=self.shuffle_zodiac_description).pack(side="left", padx=6)
+        ttk.Button(btns, text="Обновить описание", image=self.icons["text"], compound="left", command=self.shuffle_zodiac_description).pack(side="left", padx=6)
         ttk.Button(btns, text="Тема заголовка", image=self.icons["text"], compound="left", command=self.pick_topic_headline).pack(side="left", padx=0)
         ttk.Button(btns, text="Обновить", image=self.icons["refresh"], compound="left", command=self.refresh_preview).pack(side="left", padx=6)
 
@@ -672,7 +768,7 @@ class CapCutLikeUi:
         tab_mark = ttk.Frame(notebook, padding=10, style="Panel.TFrame")
         tab_render = ttk.Frame(notebook, padding=10, style="Panel.TFrame")
         notebook.add(tab_text, text="Текст")
-        notebook.add(tab_prompts, text="Темы")
+        notebook.add(tab_prompts, text="Темы и Промт")
         notebook.add(tab_scene, text="Сцена")
         notebook.add(tab_motion, text="Анимация")
         notebook.add(tab_mark, text="Вотермарка")
@@ -682,8 +778,11 @@ class CapCutLikeUi:
             ("title_font_size", "Размер заголовка", tab_text),
             ("title_font_size_min", "Мин. размер заголовка (авто по длине)", tab_text),
             ("title_wrap_width", "Ширина колонки заголовка (0=авто)", tab_text),
+            ("title_wrap_chars", "Макс. символов в строке заголовка (0=без лимита)", tab_text),
+            ("title_max_lines", "Макс. строк заголовка (превью и рендер)", tab_text),
             ("subtitle_font_size", "Размер описания", tab_text),
             ("subtitle_wrap_width", "Ширина колонки описания (0=авто)", tab_text),
+            ("subtitle_wrap_chars", "Макс. символов в строке описания (0=без лимита)", tab_text),
             ("title_y", "Y заголовка", tab_text),
             ("title_x", "Сдвиг заголовка X (от центра)", tab_text),
             ("subtitle_y", "Y описания", tab_text),
@@ -739,6 +838,54 @@ class CapCutLikeUi:
         )
         self.topics_box.pack(fill="both", expand=True, pady=(4, 6))
         self.topics_box.insert("1.0", self.settings.headline_topics)
+        ttk.Label(
+            tab_prompts,
+            text="Промпт для генерации описания ({topic} и {nonce} можно использовать как переменные).",
+        ).pack(anchor="w", pady=(8, 0))
+        self.summary_prompt_box = tk.Text(
+            tab_prompts, height=8, wrap="word", bg="#0D1421", fg="#E8EEF9", insertbackground="#E8EEF9", relief="flat"
+        )
+        self.summary_prompt_box.pack(fill="both", expand=False, pady=(4, 6))
+        self.summary_prompt_box.insert("1.0", getattr(self.settings, "summary_prompt", ""))
+        ttk.Label(tab_prompts, text="Ollama — генерация описаний (AI)", style="Section.TLabel").pack(anchor="w", pady=(12, 4))
+        ollama_help = (
+            "Модель — имя в Ollama (команда ollama list). "
+            "URL — адрес API, обычно http://127.0.0.1:11434 . "
+            "Таймаут — максимум секунд на один ответ.\n"
+            "temperature — «живость» текста: ниже ~0.8 спокойнее и однообразнее, выше ~1.1 резче и разнообразнее (дальше растёт риск каши). "
+            "top_p — насколько широко брать вероятные следующие слова (часто 0.9–1.0; больше — свободнее). "
+            "repeat_penalty — не повторять одни и те же слова/связки; выше ~1.2 меньше заёбов шаблоном (разумный потолок ~1.35).\n"
+            "После правок нажми «Применить параметры» и при необходимости сохрани пресет."
+        )
+        ttk.Label(tab_prompts, text=ollama_help, wraplength=640, justify="left", foreground="#8EA3BE", background="#121826").pack(
+            anchor="w", pady=(0, 8)
+        )
+        for key, lab, w in (
+            ("ollama_model", "Модель (имя в Ollama)", 52),
+            ("ollama_base_url", "Базовый URL API", 52),
+            ("ollama_timeout_sec", "Таймаут запроса (сек, не меньше 5)", 52),
+        ):
+            row = ttk.Frame(tab_prompts, style="Panel.TFrame")
+            row.pack(fill="x", pady=(0, 4))
+            ttk.Label(row, text=lab).pack(anchor="w")
+            var = tk.StringVar(value=str(getattr(self.settings, key, "")))
+            ttk.Entry(row, textvariable=var, width=w).pack(fill="x", anchor="w")
+            self.controls[key] = var
+        ollama_num = ttk.Frame(tab_prompts, style="Panel.TFrame")
+        ollama_num.pack(fill="x", pady=(6, 4))
+        for col, (key, lab, w) in enumerate(
+            (
+                ("ollama_temperature", "temperature (0–2)", 10),
+                ("ollama_top_p", "top_p (0.05–1)", 10),
+                ("ollama_repeat_penalty", "repeat_penalty (1–2)", 10),
+            )
+        ):
+            f = ttk.Frame(ollama_num, style="Panel.TFrame")
+            f.pack(side="left", padx=(0, 14) if col < 2 else (0, 0))
+            ttk.Label(f, text=lab).pack(anchor="w")
+            var = tk.StringVar(value=str(getattr(self.settings, key, "")))
+            ttk.Entry(f, textvariable=var, width=w).pack(anchor="w")
+            self.controls[key] = var
         ttk.Label(tab_mark, text="Текст вотермарки").pack(anchor="w", pady=(6, 0))
         self.watermark_text_var = tk.StringVar(value=self.settings.watermark_text)
         ttk.Entry(tab_mark, textvariable=self.watermark_text_var, width=25).pack(anchor="w", pady=(0, 6), fill="x")
@@ -796,8 +943,11 @@ class CapCutLikeUi:
             self.settings.title_font_size_min = max(10, int(self.controls["title_font_size_min"].get()))
             self.settings.title_font_size_min = min(self.settings.title_font_size, self.settings.title_font_size_min)
             self.settings.title_wrap_width = max(0, int(self.controls["title_wrap_width"].get()))
+            self.settings.title_wrap_chars = max(0, int(self.controls["title_wrap_chars"].get()))
+            self.settings.title_max_lines = max(1, min(20, int(self.controls["title_max_lines"].get())))
             self.settings.subtitle_font_size = int(self.controls["subtitle_font_size"].get())
             self.settings.subtitle_wrap_width = max(0, int(self.controls["subtitle_wrap_width"].get()))
+            self.settings.subtitle_wrap_chars = max(0, int(self.controls["subtitle_wrap_chars"].get()))
             self.settings.title_y = int(self.controls["title_y"].get())
             self.settings.title_x = int(self.controls["title_x"].get())
             self.settings.subtitle_y = int(self.controls["subtitle_y"].get())
@@ -817,6 +967,14 @@ class CapCutLikeUi:
             self.settings.watermark_x = int(self.controls["watermark_x"].get())
             self.settings.watermark_y = int(self.controls["watermark_y"].get())
             self.settings.glow_overlay_opacity = float(self.controls["glow_overlay_opacity"].get())
+            if "ollama_temperature" in self.controls:
+                self.settings.ollama_temperature = max(0.0, min(2.0, float(self.controls["ollama_temperature"].get())))
+            if "ollama_top_p" in self.controls:
+                self.settings.ollama_top_p = max(0.05, min(1.0, float(self.controls["ollama_top_p"].get())))
+            if "ollama_repeat_penalty" in self.controls:
+                self.settings.ollama_repeat_penalty = max(1.0, min(2.0, float(self.controls["ollama_repeat_penalty"].get())))
+            if "ollama_timeout_sec" in self.controls:
+                self.settings.ollama_timeout_sec = max(5, int(self.controls["ollama_timeout_sec"].get()))
         except ValueError:
             if self.headless:
                 print("[ERROR] Проверь числовые поля (ui_settings.json).")
@@ -825,6 +983,11 @@ class CapCutLikeUi:
             return
         if self.settings.duration_max < self.settings.duration_min:
             self.settings.duration_max = self.settings.duration_min
+        if "ollama_model" in self.controls:
+            self.settings.ollama_model = (self.controls["ollama_model"].get() or "").strip() or "qwen2.5:14b"
+        if "ollama_base_url" in self.controls:
+            u = (self.controls["ollama_base_url"].get() or "").strip().rstrip("/")
+            self.settings.ollama_base_url = u or "http://127.0.0.1:11434"
         self.settings.watermark_text = self.watermark_text_var.get().strip()
         self.settings.watermark_color = self.watermark_color_var.get().strip() or "#FFFFFF"
         self.settings.watermark_opacity = max(0, min(255, self.settings.watermark_opacity))
@@ -834,7 +997,14 @@ class CapCutLikeUi:
         self.settings.force_caps = bool(self.force_caps_var.get())
         if hasattr(self, "topics_box"):
             tp = self.topics_box.get("1.0", "end").strip()
-            self.settings.headline_topics = tp or UiSettings.__dataclass_fields__["headline_topics"].default
+            tp_low = tp.casefold()
+            if (not tp) or ("зодиак" in tp_low) or ("знаков" in tp_low):
+                self.settings.headline_topics = UiSettings.__dataclass_fields__["headline_topics"].default
+            else:
+                self.settings.headline_topics = tp
+        if hasattr(self, "summary_prompt_box"):
+            pr = self.summary_prompt_box.get("1.0", "end").strip()
+            self.settings.summary_prompt = pr or UiSettings.__dataclass_fields__["summary_prompt"].default
         if hasattr(self, "glow_colors_box"):
             graw = self.glow_colors_box.get("1.0", "end")
             self.settings.glow_overlay_colors = [ln.strip() for ln in graw.splitlines() if ln.strip()]
@@ -858,24 +1028,39 @@ class CapCutLikeUi:
 
     def pick_random_horoscope(self):
         self.apply_controls()
-        hl = self.creator.pick_random_headline(self.settings.headline_topics)
-        if not hl:
-            msg = "Добавьте темы заголовков (вкладка «Темы»): по одной строке на тему."
+        self._photo_anim_kind_override = None
+        topics_src = (self.settings.headline_topics or "").strip()
+        low_topics = topics_src.casefold()
+        if (not topics_src) or ("зодиак" in low_topics) or ("знаков" in low_topics):
+            topics_src = UiSettings.__dataclass_fields__["headline_topics"].default
+        topic = self.creator.pick_random_headline(topics_src)
+        if not topic:
+            msg = "Добавьте темы заголовков (вкладка «Темы и Промт»): по одной строке на тему."
             if self.headless:
                 print(f"[ERROR] {msg}")
             else:
                 messagebox.showerror("Ошибка", msg)
             return
-        signs_txt = self.creator.build_zodiac_description()
-        self.current_hero = "Гороскоп"
-        self.current_bio = signs_txt
+        desc_txt = self._generate_description_with_ai(topic)
+        if not desc_txt:
+            desc_txt = self.creator.build_political_description()
+        # Заголовок берём строго из списка тем (без AI-генерации).
+        hl = topic
+        media_path = self.creator.get_random_politician_media() or ""
+        self.current_hero = "Политика"
+        self.current_bio = desc_txt
         self.current_dates = ""
-        self.current_image_path = ""
+        self.current_image_path = media_path
+        # Медиа-блок сверху должен быть включён по умолчанию.
+        self.settings.photo_hidden = False
+        row_photo = self._timeline_row("photo")
+        if isinstance(row_photo, dict):
+            row_photo["visible"] = True
         self.headline_var.set(self.transform_text_case(hl))
         self.hero_var.set(self.current_hero)
         self.dates_var.set(self.current_dates)
         self.bio_box.delete("1.0", "end")
-        self.bio_box.insert("1.0", signs_txt)
+        self.bio_box.insert("1.0", desc_txt)
         self.refresh_preview()
 
     def pick_random_politician(self):
@@ -912,15 +1097,21 @@ class CapCutLikeUi:
         return ""
 
     def shuffle_zodiac_description(self):
-        """Снова перемешать все 12 знаков в поле описания."""
-        signs_txt = self.creator.build_zodiac_description()
-        self.current_bio = signs_txt
+        """Заново сгенерировать описание через AI (или fallback)."""
+        topics_src = (self.settings.headline_topics or "").strip() or UiSettings.__dataclass_fields__["headline_topics"].default
+        # Описание должно биться в текущий заголовок на карточке, а не в случайную другую строку из списка.
+        hl = (self.headline_var.get().strip() if hasattr(self, "headline_var") else "") or ""
+        topic = hl if hl else self.creator.pick_random_headline(topics_src)
+        desc_txt = self._generate_description_with_ai(topic)
+        if not desc_txt:
+            desc_txt = self.creator.build_political_description()
+        self.current_bio = desc_txt
         self.bio_box.delete("1.0", "end")
-        self.bio_box.insert("1.0", signs_txt)
+        self.bio_box.insert("1.0", desc_txt)
         self.refresh_preview()
 
     def resummarize(self):
-        """Совместимость IPC: то же, что перемешать знаки."""
+        """Совместимость IPC: то же, что обновить описание."""
         self.shuffle_zodiac_description()
 
     def _count_subtitle_words(self, text):
@@ -970,16 +1161,210 @@ class CapCutLikeUi:
     def transform_text_case(self, text):
         return text.upper() if self.settings.force_caps else text
 
+    def _normalize_text_align(self, value: str) -> str:
+        v = str(value or "").strip().lower()
+        return v if v in {"left", "center", "right"} else "center"
+
+    def _text_anchor_for_align(self, align: str) -> str:
+        a = self._normalize_text_align(align)
+        if a == "left":
+            return "la"
+        if a == "right":
+            return "ra"
+        return "ma"
+
+    def _normalize_prefix_style_mode(self, value: str) -> str:
+        v = str(value or "").strip().lower()
+        return "custom" if v == "custom" else "inherit"
+
+    def _normalize_prefix_fill_mode(self, value: str) -> str:
+        v = str(value or "").strip().lower()
+        return "palette" if v == "palette" else "solid"
+
+    def _normalize_prefix_color_list(self, raw) -> list[str]:
+        out: list[str] = []
+        if isinstance(raw, list):
+            for c in raw:
+                s = str(c or "").strip()
+                if s:
+                    out.append(s)
+        elif isinstance(raw, str):
+            for c in re.split(r"[\n,;]+", raw):
+                s = str(c or "").strip()
+                if s:
+                    out.append(s)
+        return out
+
+    def _build_subtitle_prefix_style(self) -> dict:
+        """Стиль префикса: inherit (как subtitle) или custom (с отдельными полями из настроек)."""
+        base = dict(self.get_text_style("subtitle"))
+        mode = self._normalize_prefix_style_mode(getattr(self.settings, "subtitle_prefix_style_mode", "inherit"))
+        if mode != "custom":
+            return base
+
+        style = dict(base)
+        fill_mode = self._normalize_prefix_fill_mode(getattr(self.settings, "subtitle_prefix_text_fill_mode", "solid"))
+        if fill_mode == "palette":
+            colors = self._normalize_prefix_color_list(getattr(self.settings, "subtitle_prefix_text_colors", []))
+            style["text_fill_mode"] = "static_palette"
+            style["text_palette_colors"] = colors
+            style["use_gradient"] = False
+        else:
+            col = str(getattr(self.settings, "subtitle_prefix_color", "#FFFFFF") or "#FFFFFF").strip()
+            style["text_fill_mode"] = "solid"
+            style["use_gradient"] = False
+            style["gradient_start"] = col
+            style["gradient_end"] = col
+
+        bg_enabled = bool(getattr(self.settings, "subtitle_prefix_bg_enabled", False))
+        style["bg_enabled"] = bg_enabled
+        if bg_enabled:
+            bg_mode = str(getattr(self.settings, "subtitle_prefix_bg_color_mode", "solid") or "solid").strip().lower()
+            if bg_mode not in ("solid", "palette"):
+                bg_mode = "solid"
+            style["bg_use_gradient"] = False
+            style["bg_color_mode"] = bg_mode
+            style["bg_color"] = str(getattr(self.settings, "subtitle_prefix_bg_color", "#000000") or "#000000").strip()
+            style["bg_colors"] = self._normalize_prefix_color_list(getattr(self.settings, "subtitle_prefix_bg_colors", []))
+        return style
+
+    def _render_prompt_template(self, template: str, **values) -> str:
+        tpl = str(template or "").strip()
+        if not tpl:
+            return ""
+        try:
+            return tpl.format(**values)
+        except Exception:
+            return tpl
+
+    def _ollama_generate_text(self, prompt: str) -> str:
+        pr = str(prompt or "").strip()
+        if not pr:
+            return ""
+        model = str(getattr(self.settings, "ollama_model", "qwen2.5:14b") or "qwen2.5:14b").strip()
+        base = str(getattr(self.settings, "ollama_base_url", "http://127.0.0.1:11434") or "http://127.0.0.1:11434").strip().rstrip("/")
+        timeout = max(5, int(getattr(self.settings, "ollama_timeout_sec", 120) or 120))
+        temp = float(getattr(self.settings, "ollama_temperature", 1.08) or 1.08)
+        temp = max(0.0, min(2.0, temp))
+        top_p = float(getattr(self.settings, "ollama_top_p", 0.96) or 0.96)
+        top_p = max(0.05, min(1.0, top_p))
+        rep = float(getattr(self.settings, "ollama_repeat_penalty", 1.22) or 1.22)
+        rep = max(1.0, min(2.0, rep))
+        body = {
+            "model": model,
+            "prompt": pr,
+            "stream": False,
+            "options": {
+                "temperature": temp,
+                "top_p": top_p,
+                "repeat_penalty": rep,
+            },
+        }
+        req = urllib.request.Request(
+            url=f"{base}/api/generate",
+            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+            data = json.loads(raw.decode("utf-8", errors="replace"))
+            return str(data.get("response") or "").strip()
+        except urllib.error.URLError as ex:
+            print(f"[OLLAMA] недоступен: {ex}", flush=True)
+            return ""
+        except Exception as ex:
+            print(f"[OLLAMA] ошибка генерации: {ex}", flush=True)
+            return ""
+
+    def _clean_ai_text(self, text: str) -> str:
+        t = str(text or "").replace("\r", "\n")
+        # Убираем маркдаун-обёртки и лишние пробелы.
+        t = re.sub(r"```.*?```", " ", t, flags=re.S)
+        t = re.sub(r"[ \t]+", " ", t)
+        t = re.sub(r"\n{2,}", "\n", t)
+        # Удаляем явно служебные хвосты, которые иногда прилипают.
+        bad_markers = (
+            "根据指令",
+            "纳税",
+            "I can",
+            "As an AI",
+            "I’m sorry",
+            "I'm sorry",
+            "I cannot",
+        )
+        for m in bad_markers:
+            idx = t.find(m)
+            if idx >= 0:
+                t = t[:idx]
+        return " ".join(t.split()).strip()
+
+    def _looks_like_russian_text(self, text: str, *, min_cyr_ratio: float = 0.55) -> bool:
+        t = str(text or "").strip()
+        if not t:
+            return False
+        # Явно отбрасываем CJK-подмешивания.
+        if re.search(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", t):
+            return False
+        letters = re.findall(r"[A-Za-zА-Яа-яЁё]", t)
+        if not letters:
+            return False
+        cyr = re.findall(r"[А-Яа-яЁё]", t)
+        return (len(cyr) / float(len(letters))) >= float(min_cyr_ratio)
+
+    def _generate_ai_with_retry(self, prompt: str, *, attempts: int = 2, min_cyr_ratio: float = 0.55) -> str:
+        base_prompt = str(prompt or "").strip()
+        if not base_prompt:
+            return ""
+        strict_suffix = (
+            "\n\nВАЖНО: пиши ТОЛЬКО на русском языке. "
+            "Никаких китайских/английских фрагментов, служебных пояснений или мета-комментариев."
+        )
+        for i in range(max(1, int(attempts))):
+            pr = base_prompt if i == 0 else (base_prompt + strict_suffix)
+            txt = self._clean_ai_text(self._ollama_generate_text(pr))
+            if self._looks_like_russian_text(txt, min_cyr_ratio=min_cyr_ratio):
+                return txt
+        return ""
+
+    def _generate_description_with_ai(self, topic: str) -> str:
+        nonce = f"{random.randint(100000, 999999)}"
+        prompt = self._render_prompt_template(
+            getattr(self.settings, "summary_prompt", ""),
+            topic=str(topic or "").strip(),
+            nonce=nonce,
+        )
+        txt = self._generate_ai_with_retry(prompt, attempts=3, min_cyr_ratio=0.7)
+        txt = " ".join((txt or "").replace("\r", "\n").split())
+        return txt.strip()
+
+    def _generate_headline_with_ai(self, bio: str, topic: str = "") -> str:
+        prompt = self._render_prompt_template(
+            getattr(self.settings, "headline_gen_prompt", ""),
+            bio=str(bio or "").strip(),
+            topic=str(topic or "").strip(),
+        )
+        txt = self._generate_ai_with_retry(prompt, attempts=2, min_cyr_ratio=0.7)
+        txt = " ".join((txt or "").replace("\r", "\n").split()).strip().strip('"').strip("'")
+        if not txt:
+            return ""
+        words = txt.split()
+        if len(words) > 12:
+            txt = " ".join(words[:12])
+        return txt
+
     def pick_topic_headline(self):
-        """Случайная тема из списка — как новый заголовок карточки."""
+        """Случайная тема из списка — как новый заголовок карточки (без AI)."""
         self.apply_controls()
-        line = self.creator.pick_random_headline(self.settings.headline_topics)
+        topics_src = (self.settings.headline_topics or "").strip() or UiSettings.__dataclass_fields__["headline_topics"].default
+        line = self.creator.pick_random_headline(topics_src)
         if hasattr(self, "headline_var"):
             self.headline_var.set(self.transform_text_case(line) if line else "")
         self.refresh_preview()
 
     def generate_headline(self):
-        """Совместимость IPC: случайная тема заголовка."""
+        """Совместимость IPC: выбрать случайную тему как заголовок (без AI)."""
         self.pick_topic_headline()
 
     def gradient_image(self, size, c1, c2):
@@ -1061,6 +1446,30 @@ class CapCutLikeUi:
             lines.append(cur)
         return lines
 
+    def _char_wrap_lines(self, text: str, max_chars: int) -> list[str]:
+        """Перенос по количеству символов: 0 = без ограничений."""
+        lim = max(0, int(max_chars or 0))
+        src = str(text or "")
+        if lim <= 0:
+            return [src]
+        out: list[str] = []
+        for raw in src.splitlines():
+            line = raw.strip()
+            if not line:
+                out.append("")
+                continue
+            parts = textwrap.wrap(
+                line,
+                width=lim,
+                break_long_words=True,
+                break_on_hyphens=False,
+            )
+            if parts:
+                out.extend(parts)
+            else:
+                out.append(line)
+        return out if out else [src]
+
     def _split_single_string_two_lines(self, s: str, font, max_w: float) -> tuple[str, str] | None:
         """Две непустые строки из одного блока текста; обе не шире max_w. Ищем разрез с наименьшим дисбалансом ширин."""
         if not s:
@@ -1120,6 +1529,26 @@ class CapCutLikeUi:
                 return (candidates[0][2], candidates[0][3])
         return self._split_title_into_two_lines_word_safe(s, font, max_w)
 
+    def _title_lines_collapse_to_max(
+        self,
+        out_lines: list[str],
+        font,
+        max_w: float,
+        max_lines: int,
+        fit_line_with_ellipsis,
+    ) -> str:
+        """Склеивает перенесённые строки заголовка в не более max_lines; лишнее уходит в последнюю строку с …"""
+        lim = max(1, min(20, int(max_lines or 1)))
+        cleaned = [ln.strip() for ln in (out_lines or []) if ln and str(ln).strip()]
+        if not cleaned:
+            return ""
+        if len(cleaned) <= lim:
+            return "\n".join(cleaned).strip()
+        head = cleaned[: lim - 1]
+        tail_src = " ".join(cleaned[lim - 1 :])
+        tail = fit_line_with_ellipsis(tail_src, font, max_w)
+        return "\n".join(head + [tail]).strip()
+
     def _hero_photo_mirror_horizontal(self, image_path: str, headline: str) -> bool:
         """Горизонтальное зеркало главного фото: стабильно от пути и заголовка (~40% «да»)."""
         try:
@@ -1156,16 +1585,29 @@ class CapCutLikeUi:
         ty = rng.randint(lo_y, hi_y) if mt > 0 else 0
         return resized.crop((lx, ty, lx + pw, ty + ph))
 
+    def _pick_random_photo_anim_kind(self) -> str:
+        return random.choice(("slide_left", "slide_right", "zoom_in", "zoom_out"))
+
     def _photo_anim_kind_norm(self) -> str:
+        if bool(getattr(self.settings, "photo_anim_random", False)):
+            ov = getattr(self, "_photo_anim_kind_override", None)
+            if isinstance(ov, str):
+                kk = ov.strip().lower()
+                if kk in ("slide_left", "slide_right", "zoom_in", "zoom_out"):
+                    return kk
+            picked = self._pick_random_photo_anim_kind()
+            self._photo_anim_kind_override = picked
+            return picked
+
         ov = getattr(self, "_photo_anim_kind_override", None)
         if isinstance(ov, str) and ov.strip():
             kk = ov.strip().lower()
-            if kk in ("zoom", "slide_left", "slide_right"):
-                return kk
-        k = str(getattr(self.settings, "photo_anim_kind", "zoom") or "zoom").strip().lower()
-        if k in ("zoom", "slide_left", "slide_right"):
-            return k
-        return "zoom"
+            if kk in ("zoom", "zoom_in", "zoom_out", "slide_left", "slide_right"):
+                return "zoom_in" if kk == "zoom" else kk
+        k = str(getattr(self.settings, "photo_anim_kind", "zoom_in") or "zoom_in").strip().lower()
+        if k in ("zoom", "zoom_in", "zoom_out", "slide_left", "slide_right"):
+            return "zoom_in" if k == "zoom" else k
+        return "zoom_in"
 
     def _compose_hero_slot_cropped_rgba(
         self,
@@ -1192,7 +1634,9 @@ class CapCutLikeUi:
         if anim_on and kind in ("slide_left", "slide_right"):
             need = (float(pw) + float(rng_px)) / float(max(1, pw))
             zoom = max(zoom_start, need)
-        elif anim_on and kind == "zoom":
+        elif anim_on and kind == "zoom_out":
+            zoom = zoom_end - (zoom_end - zoom_start) * progress
+        elif anim_on and kind in ("zoom", "zoom_in"):
             zoom = zoom_start + (zoom_end - zoom_start) * progress
         else:
             zoom = zoom_start
@@ -1246,6 +1690,41 @@ class CapCutLikeUi:
         """Карточка по центру кадра 9:16 (без слота фото)."""
         card_y = int((vh - ch) / 2 + self.settings.card_offset_y)
         return max(0, min(vh - ch - 20, card_y))
+
+    def _render_scene_photo_layer_rgba(
+        self,
+        vw: int,
+        vh: int,
+        t: float,
+        dur: float,
+        title_line: str,
+        photo_slot_x: int,
+        photo_slot_y: int,
+    ) -> tuple[Image.Image, tuple[int, int, int, int] | None]:
+        """Верхний медиа-блок сцены: фото/GIF из current_image_path."""
+        layer = Image.new("RGBA", (vw, vh), (0, 0, 0, 0))
+        media_path = (self.current_image_path or "").strip()
+        if not media_path:
+            return layer, None
+        p = Path(media_path).expanduser()
+        if not p.is_file():
+            return layer, None
+
+        pw = max(16, min(5000, int(self.settings.photo_width)))
+        ph = max(16, min(vh, int(self.settings.photo_height)))
+        # Верхняя GIF у блока политика играет чуть быстрее (x1.4).
+        frame_rgba = self.load_media_frame_rgba(str(p), (pw, ph), t=t, dur=dur, playback_speed=1.4)
+        if frame_rgba is None:
+            return layer, None
+
+        img_slot = self._compose_hero_slot_cropped_rgba(frame_rgba.convert("RGBA"), pw, ph, t, dur, title_line, str(p), anim_time0=0.0)
+        if self._hero_photo_mirror_horizontal(str(p), title_line):
+            img_slot = ImageOps.mirror(img_slot)
+        dec, pad_x, pad_y = self.decorate_layer_rgba(img_slot, "photo")
+        ox = int(photo_slot_x) - int(pad_x)
+        oy = int(photo_slot_y) - int(pad_y)
+        layer.alpha_composite(dec, (ox, oy))
+        return layer, (ox, oy, ox + dec.width, oy + dec.height)
 
     @staticmethod
     def _alpha_composite_text_stroke_ring(canvas_img, fill_mask, width_px, rgb, outer=True):
@@ -1326,10 +1805,12 @@ class CapCutLikeUi:
         if style.get("bg_enabled"):
             pad_x = int(style.get("bg_padding_x", 12))
             pad_y = int(style.get("bg_padding_y", 8))
-            # Подложка включена — размер подложки не следует за шрифтом (только текст меняется).
-            resizes = False
             bg_img_path = self._resolve_style_bg_image_file(style)
             use_manual = bool(style.get("bg_use_fixed_inner_box")) and int(style.get("bg_fixed_width") or 0) > 0 and int(style.get("bg_fixed_height") or 0) > 0
+            per_line_boxes = bool(style.get("bg_per_line_boxes", False)) and not use_manual
+            # Если фиксированный размер выключен (или 0x0), подложка должна идти по реальному bbox текста.
+            # Иначе появляется «лишний воздух» от старого bg_snap_*.
+            resizes = not use_manual
             if use_manual:
                 fw = int(style["bg_fixed_width"])
                 fh = int(style["bg_fixed_height"])
@@ -1365,11 +1846,9 @@ class CapCutLikeUi:
                 inter_extra = max(0, nlines_bg - 1) * sp_i // 2
                 pad_top = pad_y + inter_extra // 2
                 pad_bot = pad_y + (inter_extra - inter_extra // 2)
-            bg_rect = (bx0 - pad_x, by0 - pad_top, bx1 + pad_x, by1 + pad_bot)
             bg_layer = Image.new("RGBA", canvas_img.size, (0, 0, 0, 0))
             bg_draw = ImageDraw.Draw(bg_layer)
-            bg_cr = max(0, int(style.get("bg_corner_radius", 12) or 0))
-            r_in = _bg_cap_corner_radius(bg_rect, bg_cr)
+            bg_cr_raw = max(0, int(style.get("bg_corner_radius", 12) or 0))
 
             bg_new = (
                 style.get("bg_stroke_outer_enabled") is not None
@@ -1436,61 +1915,109 @@ class CapCutLikeUi:
                 out_px = 0
                 in_px = 0
 
-            if out_on and out_rgb is not None and out_px > 0:
-                bx0, by0, bx1, by1 = bg_rect
-                big = (bx0 - out_px, by0 - out_px, bx1 + out_px, by1 + out_px)
-                r_big = _bg_cap_corner_radius(big, bg_cr + out_px)
-                bg_draw.rounded_rectangle(big, radius=r_big, fill=(out_rgb[0], out_rgb[1], out_rgb[2], 255))
+            bg_rects: list[tuple[int, int, int, int]] = []
+            if per_line_boxes:
+                line_masks = self._per_line_glyph_masks(canvas_img.size, (x, y), text, font, anchor, align, spacing)
+                for lm in line_masks:
+                    lb = lm.getbbox()
+                    if lb is None:
+                        continue
+                    lx0, ly0, lx1, ly1 = [int(v) for v in lb]
+                    if lx1 <= lx0 or ly1 <= ly0:
+                        continue
+                    bg_rects.append((lx0 - pad_x, ly0 - pad_y, lx1 + pad_x, ly1 + pad_y))
+            if not bg_rects:
+                bg_rects = [(bx0 - pad_x, by0 - pad_top, bx1 + pad_x, by1 + pad_bot)]
 
-            if bg_img_path:
-                bw = max(1, int(bg_rect[2]) - int(bg_rect[0]))
-                bh = max(1, int(bg_rect[3]) - int(bg_rect[1]))
-                _rs = getattr(Image, "Resampling", Image).LANCZOS
-                try:
-                    with Image.open(bg_img_path) as im0:
-                        if getattr(im0, "n_frames", 1) > 1:
-                            try:
-                                im0.seek(0)
-                            except Exception:
-                                pass
-                        tex = im0.convert("RGBA").resize((bw, bh), _rs)
-                    mask = Image.new("L", tex.size, 0)
-                    rr_m = max(0, int(r_in))
-                    ImageDraw.Draw(mask).rounded_rectangle((0, 0, tex.size[0], tex.size[1]), radius=rr_m, fill=255)
-                    bg_layer.paste(tex, (int(bg_rect[0]), int(bg_rect[1])), mask)
-                except Exception:
-                    alpha = max(0, min(255, int(style.get("bg_opacity", 80))))
+            hit_union: tuple[int, int, int, int] | None = None
+            for bg_rect in bg_rects:
+                r_in = _bg_cap_corner_radius(bg_rect, bg_cr_raw)
+                if out_on and out_rgb is not None and out_px > 0:
+                    bx0r, by0r, bx1r, by1r = bg_rect
+                    big = (bx0r - out_px, by0r - out_px, bx1r + out_px, by1r + out_px)
+                    r_big = _bg_cap_corner_radius(big, bg_cr_raw + out_px)
+                    bg_draw.rounded_rectangle(big, radius=r_big, fill=(out_rgb[0], out_rgb[1], out_rgb[2], 255))
+
+                if bg_img_path:
+                    bw = max(1, int(bg_rect[2]) - int(bg_rect[0]))
+                    bh = max(1, int(bg_rect[3]) - int(bg_rect[1]))
+                    _rs = getattr(Image, "Resampling", Image).LANCZOS
                     try:
-                        bg_rgb = ImageColor.getrgb(self._resolve_text_bg_color(style))
+                        with Image.open(bg_img_path) as im0:
+                            if getattr(im0, "n_frames", 1) > 1:
+                                try:
+                                    im0.seek(0)
+                                except Exception:
+                                    pass
+                            tex = im0.convert("RGBA").resize((bw, bh), _rs)
+                        mask = Image.new("L", tex.size, 0)
+                        rr_m = max(0, int(r_in))
+                        ImageDraw.Draw(mask).rounded_rectangle((0, 0, tex.size[0], tex.size[1]), radius=rr_m, fill=255)
+                        bg_layer.paste(tex, (int(bg_rect[0]), int(bg_rect[1])), mask)
                     except Exception:
-                        bg_rgb = (32, 36, 44)
-                    bg_draw.rounded_rectangle(bg_rect, radius=max(0, int(r_in)), fill=(bg_rgb[0], bg_rgb[1], bg_rgb[2], alpha))
-            else:
-                alpha = max(0, min(255, int(style.get("bg_opacity", 80))))
-                if style.get("bg_use_gradient"):
-                    grad = self.gradient_image((bg_rect[2] - bg_rect[0], bg_rect[3] - bg_rect[1]), style.get("bg_gradient_start", "#000000"), style.get("bg_gradient_end", "#333333"))
-                    alpha_mask = Image.new("L", grad.size, 0)
-                    ImageDraw.Draw(alpha_mask).rounded_rectangle((0, 0, grad.size[0], grad.size[1]), radius=max(0, int(r_in)), fill=alpha)
-                    bg_layer.paste(grad, (bg_rect[0], bg_rect[1]), alpha_mask)
+                        alpha = max(0, min(255, int(style.get("bg_opacity", 80))))
+                        try:
+                            bg_rgb = ImageColor.getrgb(self._resolve_text_bg_color(style, allow_palette=True))
+                        except Exception:
+                            bg_rgb = (32, 36, 44)
+                        bg_draw.rounded_rectangle(bg_rect, radius=max(0, int(r_in)), fill=(bg_rgb[0], bg_rgb[1], bg_rgb[2], alpha))
                 else:
-                    try:
-                        bg_rgb = ImageColor.getrgb(self._resolve_text_bg_color(style))
-                    except Exception:
-                        bg_rgb = (0, 0, 0)
-                    bg_draw.rounded_rectangle(bg_rect, radius=max(0, int(r_in)), fill=(bg_rgb[0], bg_rgb[1], bg_rgb[2], alpha))
+                    alpha = max(0, min(255, int(style.get("bg_opacity", 80))))
+                    mode_raw = str(style.get("bg_color_mode") or "").strip().lower()
+                    if mode_raw in ("gradient", "grad"):
+                        bg_mode = "gradient"
+                    elif mode_raw in ("palette", "multi", "many", "random"):
+                        bg_mode = "palette"
+                    elif mode_raw in ("solid", "single", "one", "color"):
+                        bg_mode = "solid"
+                    else:
+                        if bool(style.get("bg_use_gradient")):
+                            bg_mode = "gradient"
+                        elif self._normalize_text_bg_palette(style.get("bg_colors")):
+                            bg_mode = "palette"
+                        else:
+                            bg_mode = "solid"
+                    if bg_mode == "gradient":
+                        grad = self.gradient_image((bg_rect[2] - bg_rect[0], bg_rect[3] - bg_rect[1]), style.get("bg_gradient_start", "#000000"), style.get("bg_gradient_end", "#333333"))
+                        alpha_mask = Image.new("L", grad.size, 0)
+                        ImageDraw.Draw(alpha_mask).rounded_rectangle((0, 0, grad.size[0], grad.size[1]), radius=max(0, int(r_in)), fill=alpha)
+                        bg_layer.paste(grad, (bg_rect[0], bg_rect[1]), alpha_mask)
+                    else:
+                        try:
+                            bg_rgb = ImageColor.getrgb(self._resolve_text_bg_color(style, allow_palette=(bg_mode == "palette")))
+                        except Exception:
+                            bg_rgb = (0, 0, 0)
+                        bg_draw.rounded_rectangle(bg_rect, radius=max(0, int(r_in)), fill=(bg_rgb[0], bg_rgb[1], bg_rgb[2], alpha))
 
-            if in_on and in_rgb is not None and in_px > 0:
-                bg_draw.rounded_rectangle(bg_rect, radius=max(0, int(r_in)), outline=(in_rgb[0], in_rgb[1], in_rgb[2], 255), width=in_px)
+                if in_on and in_rgb is not None and in_px > 0:
+                    bg_draw.rounded_rectangle(bg_rect, radius=max(0, int(r_in)), outline=(in_rgb[0], in_rgb[1], in_rgb[2], 255), width=in_px)
+
+                hx0, hy0, hx1, hy1 = int(bg_rect[0]), int(bg_rect[1]), int(bg_rect[2]), int(bg_rect[3])
+                if out_on and out_rgb is not None and out_px > 0:
+                    hx0 -= out_px
+                    hy0 -= out_px
+                    hx1 += out_px
+                    hy1 += out_px
+                one_hit = (hx0, hy0, hx1, hy1)
+                if hit_union is None:
+                    hit_union = one_hit
+                else:
+                    hit_union = (
+                        min(hit_union[0], one_hit[0]),
+                        min(hit_union[1], one_hit[1]),
+                        max(hit_union[2], one_hit[2]),
+                        max(hit_union[3], one_hit[3]),
+                    )
             canvas_img.alpha_composite(bg_layer)
             # Превью/хитбоксы используют возвращаемый bbox — включить подложку (и внешнюю обводку), иначе
             # клики по картинке при фиксированном блоке попадают мимо и блок нельзя тащить/ресайзить.
-            hx0, hy0, hx1, hy1 = int(bg_rect[0]), int(bg_rect[1]), int(bg_rect[2]), int(bg_rect[3])
-            if out_on and out_rgb is not None and out_px > 0:
-                hx0 = int(bg_rect[0] - out_px)
-                hy0 = int(bg_rect[1] - out_px)
-                hx1 = int(bg_rect[2] + out_px)
-                hy1 = int(bg_rect[3] + out_px)
-            bbox = (min(bbox[0], hx0), min(bbox[1], hy0), max(bbox[2], hx1), max(bbox[3], hy1))
+            if hit_union is not None:
+                bbox = (
+                    min(bbox[0], int(hit_union[0])),
+                    min(bbox[1], int(hit_union[1])),
+                    max(bbox[2], int(hit_union[2])),
+                    max(bbox[3], int(hit_union[3])),
+                )
 
         # Shadow
         if style.get("shadow_enabled"):
@@ -1577,7 +2104,7 @@ class CapCutLikeUi:
             self._alpha_composite_text_stroke_ring(canvas_img, fill_mask, iw, in_rgb, outer=False)
         return bbox
 
-    def load_media_frame_rgba(self, path, size, t=0.0, dur=0.0):
+    def load_media_frame_rgba(self, path, size, t=0.0, dur=0.0, playback_speed: float = 1.0):
         p = Path(path)
         if not p.exists():
             return None
@@ -1586,11 +2113,10 @@ class CapCutLikeUi:
             if suf in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"):
                 img = Image.open(p)
                 if hasattr(img, "n_frames") and img.n_frames > 1:
-                    if dur and dur > 0:
-                        idx = int((max(0.0, t) / dur) * img.n_frames) % img.n_frames
-                    else:
-                        idx = 0
-                    img.seek(idx)
+                    # GIF всегда идёт со своей нативной скоростью:
+                    # не растягиваем под длительность сцены, а циклим по реальным длительностям кадров.
+                    speed = max(0.01, float(playback_speed or 1.0))
+                    self._seek_gif_to_clock_time(img, float(t) * speed)
                 return img.convert("RGBA").resize(size, Image.LANCZOS)
             if suf in (".mp4", ".mov", ".avi", ".mkv", ".webm"):
                 clip = VideoFileClip(str(p))
@@ -1732,9 +2258,17 @@ class CapCutLikeUi:
                     pass
         if not frames_np:
             return None
-        total_ms = max(1, sum(durs))
-        fps = max(1, min(60, int(len(frames_np) / (total_ms / 1000.0))))
-        clip = ImageSequenceClip(frames_np, fps=fps)
+        frame_clips: list = []
+        for arr, d_ms in zip(frames_np, durs):
+            sec = max(0.02, float(d_ms) / 1000.0)
+            try:
+                fc = ImageClip(arr, transparent=True).set_duration(sec)
+            except TypeError:
+                fc = ImageClip(arr).set_duration(sec)
+            frame_clips.append(fc)
+        if not frame_clips:
+            return None
+        clip = concatenate_videoclips(frame_clips, method="compose")
         if clip.duration < dur:
             clip = clip.fx(vfx.loop, duration=dur)
         clip = clip.subclip(0, dur)
@@ -1847,10 +2381,10 @@ class CapCutLikeUi:
         arr[:, :, 3] = a
         return Image.fromarray(arr, mode="RGBA")
 
-    def _resolve_text_bg_color(self, style: dict) -> str:
+    def _resolve_text_bg_color(self, style: dict, *, allow_palette: bool = True) -> str:
         pal = self._normalize_text_bg_palette(style.get("bg_colors"))
         fallback = str(style.get("bg_color") or "#000000").strip() or "#000000"
-        if not pal:
+        if (not allow_palette) or (not pal):
             return fallback
         key = str(style.get("_bg_random_key") or "").strip()
         if not key:
@@ -2125,23 +2659,38 @@ class CapCutLikeUi:
     def ensure_timeline_layers(self) -> None:
         """Слои таймлайна: старт/конец/z; подмешивает overlay:* из scene_overlays."""
         dur = max(0.1, float(self.settings.duration_max))
-        defaults = [
-            {"id": "background", "start": 0.0, "end": dur, "z": 0, "visible": True},
-            {"id": "card", "start": 0.0, "end": dur, "z": 20, "visible": True},
-            {"id": "title", "start": 0.0, "end": dur, "z": 21, "visible": True},
-            {"id": "subtitle", "start": 0.0, "end": dur, "z": 22, "visible": True},
-            {"id": "dates", "start": 0.0, "end": dur, "z": 23, "visible": True},
-            {"id": "watermark", "start": 0.0, "end": dur, "z": 100, "visible": True},
-            {"id": "glow", "start": 0.0, "end": dur, "z": 10000, "visible": True},
-        ]
+        defaults = {
+            "background": {"id": "background", "start": 0.0, "end": dur, "z": 0, "visible": True},
+            "photo": {"id": "photo", "start": 0.0, "end": dur, "z": 10, "visible": True},
+            "card": {"id": "card", "start": 0.0, "end": dur, "z": 20, "visible": True},
+            "title": {"id": "title", "start": 0.0, "end": dur, "z": 21, "visible": True},
+            "subtitle": {"id": "subtitle", "start": 0.0, "end": dur, "z": 22, "visible": True},
+            "dates": {"id": "dates", "start": 0.0, "end": dur, "z": 23, "visible": True},
+            "watermark": {"id": "watermark", "start": 0.0, "end": dur, "z": 100, "visible": True},
+            "glow": {"id": "glow", "start": 0.0, "end": dur, "z": 10000, "visible": True},
+        }
         rows = getattr(self.settings, "timeline_layers", None)
         if not isinstance(rows, list):
             rows = []
+        allowed_overlay_ids: set[str] = set()
+        overlays = getattr(self.settings, "scene_overlays", None)
+        if isinstance(overlays, list):
+            for item in overlays:
+                if not isinstance(item, dict):
+                    continue
+                oid_raw = str(item.get("id") or "").strip()
+                oid = re.sub(r"[^a-zA-Z0-9_\-]", "", oid_raw)[:80]
+                if not oid:
+                    continue
+                allowed_overlay_ids.add(f"overlay:{oid}")
         by_id: dict[str, dict] = {}
         for r in rows:
             if not isinstance(r, dict) or not str(r.get("id") or "").strip():
                 continue
             iid = str(r["id"]).strip()
+            if iid not in defaults and iid not in allowed_overlay_ids:
+                # legacy-слои старых версий не должны жить в актуальном таймлайне
+                continue
             try:
                 z = int(r.get("z", 0))
             except Exception:
@@ -2156,21 +2705,12 @@ class CapCutLikeUi:
                 "z": z,
                 "visible": bool(vis),
             }
-        for d in defaults:
-            if d["id"] not in by_id:
-                by_id[d["id"]] = {"id": d["id"], "start": 0.0, "end": dur, "z": d["z"], "visible": True}
-        overlays = getattr(self.settings, "scene_overlays", None)
-        if isinstance(overlays, list):
-            for item in overlays:
-                if not isinstance(item, dict):
-                    continue
-                oid_raw = str(item.get("id") or "").strip()
-                oid = re.sub(r"[^a-zA-Z0-9_\-]", "", oid_raw)[:80]
-                if not oid:
-                    continue
-                lid = f"overlay:{oid}"
-                if lid not in by_id:
-                    by_id[lid] = {"id": lid, "start": 0.0, "end": dur, "z": 200, "visible": True}
+        for did, d in defaults.items():
+            if did not in by_id:
+                by_id[did] = {"id": did, "start": 0.0, "end": dur, "z": d["z"], "visible": True}
+        for lid in allowed_overlay_ids:
+            if lid not in by_id:
+                by_id[lid] = {"id": lid, "start": 0.0, "end": dur, "z": 120, "visible": True}
         for lid in list(by_id.keys()):
             r = by_id[lid]
             st = max(0.0, min(float(r.get("start", 0.0)), dur))
@@ -2178,8 +2718,6 @@ class CapCutLikeUi:
             r["start"], r["end"] = st, en
             if "visible" not in r:
                 r["visible"] = True
-        # Слой «фото героя» больше не используется — убираем из старых пресетов.
-        by_id.pop("photo", None)
         self.settings.timeline_layers = sorted(by_id.values(), key=lambda x: (int(x.get("z", 0)), str(x.get("id", ""))))
 
     def _timeline_row(self, layer_id: str) -> dict | None:
@@ -2255,7 +2793,12 @@ class CapCutLikeUi:
         if not self._timeline_visible(layer_id, t, clip_dur):
             return False
         if layer_id == "photo":
-            return False
+            if bool(getattr(self.settings, "photo_hidden", False)):
+                return False
+            p = (self.current_image_path or "").strip()
+            if not p:
+                return False
+            return Path(p).expanduser().is_file()
         if layer_id == "card" and bool(getattr(self.settings, "card_hidden", False)):
             return False
         if layer_id == "title" and bool(getattr(self.settings, "title_hidden", False)):
@@ -2364,7 +2907,50 @@ class CapCutLikeUi:
         title_t = self.transform_text_case(title).replace("\n", " ").replace("\r", " ").strip()
         title_font = ImageFont.truetype(self.settings.title_font, self.settings.title_font_size)
         title_wrapped = title_t
+        title_char_lim = int(getattr(self.settings, "title_wrap_chars", 0) or 0)
+        title_line_cap = int(getattr(self.settings, "title_max_lines", 3) or 3)
+        title_line_cap = max(1, min(20, title_line_cap))
         if not bool(getattr(self.settings, "title_hidden", False)) and title_t:
+            def _fit_line_with_ellipsis(src_line: str, font_try, max_w: float) -> str:
+                s = " ".join(str(src_line or "").split()).strip()
+                if not s:
+                    return ""
+                if self._measure_text_line_width(s, font_try) <= max_w:
+                    return s
+                ell = "..."
+                cut = s
+                while cut and self._measure_text_line_width((cut + ell).strip(), font_try) > max_w:
+                    cut = cut[:-1].rstrip()
+                return (cut + ell).strip() if cut else ell
+
+            def _title_wrap_try(text_src: str, font_try) -> str:
+                if title_char_lim > 0:
+                    out_lines: list[str] = []
+                    for chunk in self._char_wrap_lines(text_src, title_char_lim):
+                        ch = chunk.strip()
+                        if not ch:
+                            continue
+                        out_lines.extend(self._word_wrap_title_lines(ch, font_try, title_box_w))
+                    out_lines = [ln.strip() for ln in out_lines if ln and ln.strip()]
+                    if not out_lines:
+                        return ""
+                    return self._title_lines_collapse_to_max(
+                        out_lines, font_try, title_box_w, title_line_cap, _fit_line_with_ellipsis
+                    )
+                s_norm = " ".join((text_src or "").replace("\n", " ").replace("\r", " ").split())
+                if not s_norm:
+                    return ""
+                out_lines = self._word_wrap_title_lines(s_norm, font_try, title_box_w)
+                if not out_lines:
+                    return ""
+                if title_line_cap == 2:
+                    pair_try = self._split_title_exactly_two_lines(text_src, font_try, title_box_w)
+                    if pair_try is not None:
+                        return f"{pair_try[0]}\n{pair_try[1]}".strip()
+                return self._title_lines_collapse_to_max(
+                    out_lines, font_try, title_box_w, title_line_cap, _fit_line_with_ellipsis
+                )
+
             base_sz = max(8, int(self.settings.title_font_size))
             min_sz = max(12, min(base_sz, int(getattr(self.settings, "title_font_size_min", 22))))
             min_sz = min(min_sz, base_sz)
@@ -2375,6 +2961,8 @@ class CapCutLikeUi:
                 max_title_h = max(64, sub_ty_eval - title_ty_eval - gap_m)
             else:
                 max_title_h = max(120, th_img - title_ty_eval - 32)
+            title_align = self._normalize_text_align(getattr(self.settings, "title_align", "center"))
+            title_anchor = self._text_anchor_for_align(title_align)
             tx_eval = (cx + cw0 // 2 + int(self.settings.title_x)) if use_frame_text else (w // 2 + int(self.settings.title_x))
             title_path = self.settings.title_font
             picked = False
@@ -2384,10 +2972,9 @@ class CapCutLikeUi:
                     f_try = ImageFont.truetype(title_path, sz)
                 except Exception:
                     continue
-                pair_try = self._split_title_exactly_two_lines(title_t, f_try, title_box_w)
-                if pair_try is None:
+                wrapped_try = _title_wrap_try(title_t, f_try)
+                if not wrapped_try:
                     continue
-                wrapped_try = f"{pair_try[0]}\n{pair_try[1]}"
                 h_try = self._title_multiline_height(wrapped_try, f_try, tx_eval, title_ty_eval, spacing=5)
                 if h_try <= max_title_h:
                     title_font = f_try
@@ -2400,10 +2987,9 @@ class CapCutLikeUi:
                         f_try = ImageFont.truetype(title_path, sz)
                     except Exception:
                         continue
-                    pair_try = self._split_title_exactly_two_lines(title_t, f_try, title_box_w)
-                    if pair_try is None:
+                    wrapped_try = _title_wrap_try(title_t, f_try)
+                    if not wrapped_try:
                         continue
-                    wrapped_try = f"{pair_try[0]}\n{pair_try[1]}"
                     h_try = self._title_multiline_height(wrapped_try, f_try, tx_eval, title_ty_eval, spacing=5)
                     if h_try <= max_title_h:
                         title_font = f_try
@@ -2415,16 +3001,15 @@ class CapCutLikeUi:
                     title_font = ImageFont.truetype(title_path, min_sz)
                 except Exception:
                     pass
-                pair_fb = self._split_title_exactly_two_lines(title_t, title_font, title_box_w)
-                if pair_fb is None:
-                    title_wrapped = title_t
-                else:
-                    title_wrapped = f"{pair_fb[0]}\n{pair_fb[1]}"
+                wrapped_fb = _title_wrap_try(title_t, title_font)
+                title_wrapped = wrapped_fb if wrapped_fb else title_t
         if bool(getattr(self.settings, "title_hidden", False)):
             title_bbox = (0, 0, 0, 0)
         else:
             tx = (cx + cw0 // 2 + int(self.settings.title_x)) if use_frame_text else (w // 2 + int(self.settings.title_x))
             ty = (cy + int(self.settings.title_y)) if use_frame_text else int(self.settings.title_y)
+            title_align = self._normalize_text_align(getattr(self.settings, "title_align", "center"))
+            title_anchor = self._text_anchor_for_align(title_align)
             title_bbox = self.draw_styled_text(
                 title_img,
                 title_wrapped,
@@ -2432,8 +3017,8 @@ class CapCutLikeUi:
                 ty,
                 title_font,
                 {**self.get_text_style("title"), "_bg_random_key": "title"},
-                align="center",
-                anchor="ma",
+                align=title_align,
+                anchor=title_anchor,
                 spacing=5,
                 persist_style_element="title",
             )
@@ -2441,17 +3026,25 @@ class CapCutLikeUi:
         subtitle_img = Image.new("RGBA", (tw_img, th_img), (0, 0, 0, 0))
         subtitle_t = self.transform_text_case(self.normalize_subtitle(subtitle))
         wrapped_segments: list[str] = []
+        char_lim = int(getattr(self.settings, "subtitle_wrap_chars", 0) or 0)
         for block in subtitle_t.split("\n"):
             blk = block.strip()
             if not blk:
                 continue
-            wrapped_segments.extend(self._word_wrap_title_lines(blk, subtitle_font, subtitle_box_w))
+            char_chunks = self._char_wrap_lines(blk, char_lim)
+            for chunk in char_chunks:
+                ch = chunk.strip()
+                if not ch:
+                    continue
+                wrapped_segments.extend(self._word_wrap_title_lines(ch, subtitle_font, subtitle_box_w))
         subtitle_wrapped = "\n".join(wrapped_segments)
         if bool(getattr(self.settings, "subtitle_hidden", False)):
             subtitle_bbox = (0, 0, 0, 0)
         else:
             sx = (cx + cw0 // 2 + int(self.settings.subtitle_x)) if use_frame_text else (w // 2 + int(self.settings.subtitle_x))
             sy = (cy + int(self.settings.subtitle_y)) if use_frame_text else int(self.settings.subtitle_y)
+            subtitle_align = self._normalize_text_align(getattr(self.settings, "subtitle_align", "center"))
+            subtitle_anchor = self._text_anchor_for_align(subtitle_align)
             subtitle_bbox = self.draw_styled_text(
                 subtitle_img,
                 subtitle_wrapped,
@@ -2459,8 +3052,8 @@ class CapCutLikeUi:
                 sy,
                 subtitle_font,
                 {**self.get_text_style("subtitle"), "_bg_random_key": "subtitle"},
-                align="center",
-                anchor="ma",
+                align=subtitle_align,
+                anchor=subtitle_anchor,
                 spacing=self.settings.subtitle_line_spacing,
                 persist_style_element="subtitle",
             )
@@ -2471,8 +3064,8 @@ class CapCutLikeUi:
                 sy,
                 subtitle_font,
                 self.settings.subtitle_line_spacing,
-                anchor="ma",
-                align="center",
+                anchor=subtitle_anchor,
+                align=subtitle_align,
             )
             if emj_bbox is not None:
                 subtitle_bbox = (
@@ -2482,11 +3075,63 @@ class CapCutLikeUi:
                     max(int(subtitle_bbox[3]), int(emj_bbox[3])),
                 )
 
+            # Доп. префикс под описанием (опционально).
+            prefix_enabled = bool(getattr(self.settings, "subtitle_prefix_enabled", False))
+            prefix_raw = str(getattr(self.settings, "subtitle_prefix_text", "") or "").strip()
+            if prefix_enabled and prefix_raw:
+                pf_path = str(getattr(self.settings, "subtitle_prefix_font", "") or "").strip() or self.settings.subtitle_font
+                pf_size_raw = int(getattr(self.settings, "subtitle_prefix_font_size", 0) or 0)
+                pf_size = max(8, pf_size_raw if pf_size_raw > 0 else int(self.settings.subtitle_font_size))
+                try:
+                    prefix_font = ImageFont.truetype(pf_path, pf_size)
+                except Exception:
+                    prefix_font = subtitle_font
+
+                prefix_t = self.transform_text_case(prefix_raw)
+                prefix_segments: list[str] = []
+                p_char_lim = int(getattr(self.settings, "subtitle_wrap_chars", 0) or 0)
+                for block in prefix_t.split("\n"):
+                    blk = block.strip()
+                    if not blk:
+                        continue
+                    char_chunks = self._char_wrap_lines(blk, p_char_lim)
+                    for chunk in char_chunks:
+                        ch = chunk.strip()
+                        if not ch:
+                            continue
+                        prefix_segments.extend(self._word_wrap_title_lines(ch, prefix_font, subtitle_box_w))
+                prefix_wrapped = "\n".join(prefix_segments).strip()
+                if prefix_wrapped:
+                    gap_lines = max(0, int(getattr(self.settings, "subtitle_prefix_gap_lines", 2) or 0))
+                    # Отступ в «пустых строках»: близко к реальной высоте строки текущего шрифта префикса.
+                    line_px = max(12, int(round(pf_size * 1.15)) + max(0, int(self.settings.subtitle_line_spacing)))
+                    py_prefix = int(subtitle_bbox[3] + gap_lines * line_px)
+                    prefix_style = {**self._build_subtitle_prefix_style(), "_bg_random_key": "subtitle_prefix"}
+                    prefix_bbox = self.draw_styled_text(
+                        subtitle_img,
+                        prefix_wrapped,
+                        sx,
+                        py_prefix,
+                        prefix_font,
+                        prefix_style,
+                        align=subtitle_align,
+                        anchor=subtitle_anchor,
+                        spacing=self.settings.subtitle_line_spacing,
+                    )
+                    subtitle_bbox = (
+                        min(int(subtitle_bbox[0]), int(prefix_bbox[0])),
+                        min(int(subtitle_bbox[1]), int(prefix_bbox[1])),
+                        max(int(subtitle_bbox[2]), int(prefix_bbox[2])),
+                        max(int(subtitle_bbox[3]), int(prefix_bbox[3])),
+                    )
+
         dates_img = Image.new("RGBA", (tw_img, th_img), (0, 0, 0, 0))
         dates_bbox = (0, 0, 0, 0)
         if dates_text.strip() and not bool(getattr(self.settings, "dates_hidden", False)):
             dx = (cx + cw0 // 2 + int(self.settings.dates_x)) if use_frame_text else (w // 2 + int(self.settings.dates_x))
             dy = (cy + int(self.settings.dates_y)) if use_frame_text else int(self.settings.dates_y)
+            dates_align = self._normalize_text_align(getattr(self.settings, "dates_align", "center"))
+            dates_anchor = self._text_anchor_for_align(dates_align)
             dates_bbox = self.draw_styled_text(
                 dates_img,
                 self.transform_text_case(dates_text.strip()),
@@ -2494,8 +3139,8 @@ class CapCutLikeUi:
                 dy,
                 dates_font,
                 {**self.get_text_style("dates"), "_bg_random_key": "dates"},
-                align="center",
-                anchor="ma",
+                align=dates_align,
+                anchor=dates_anchor,
                 spacing=4,
                 persist_style_element="dates",
             )
@@ -2976,9 +3621,13 @@ class CapCutLikeUi:
 
         cw = int(self.settings.card_width)
         ch = int(self.settings.card_height)
+        pw = max(16, min(5000, int(self.settings.photo_width)))
+        ph = max(16, min(vh, int(self.settings.photo_height)))
         card_x = int((vw - cw) / 2 + self.settings.card_offset_x)
         card_x = max(-cw + 60, min(vw - 60, card_x))
-        card_y = self._layout_card_center_vertical(vh, ch)
+        card_y, photo_y = self._layout_card_photo_vertical(vh, ph, ch)
+        photo_x = int((vw - pw) / 2 + self.settings.photo_offset_x)
+        photo_x = max(-pw + 40, min(vw - 40, photo_x))
         card_parts, card_meta = self.render_card_decomposed(
             title_line,
             self.bio_box.get("1.0", "end").strip(),
@@ -2995,6 +3644,8 @@ class CapCutLikeUi:
 
         layers_img: dict[str, Image.Image] = {}
         layers_img["background"] = self._compose_base_frame_rgb(vw, vh, t, dur, photo_path=None).convert("RGBA")
+        photo_layer, photo_bbox = self._render_scene_photo_layer_rgba(vw, vh, t, dur, title_line, photo_x, photo_y)
+        layers_img["photo"] = photo_layer if self._preview_layer_drawable("photo", t, cap) else Image.new("RGBA", (vw, vh), (0, 0, 0, 0))
         layers_img["glow"] = (
             self._render_glow_overlay_rgba(vw, vh, t, dur)
             if self._preview_layer_drawable("glow", t, cap)
@@ -3070,6 +3721,8 @@ class CapCutLikeUi:
 
         frame = base.convert("RGB")
         self.hitboxes_video = {}
+        if self._preview_layer_drawable("photo", t, cap) and photo_bbox is not None:
+            self.hitboxes_video["photo"] = tuple(int(v) for v in photo_bbox)
         if self._preview_layer_drawable("card", t, cap):
             self.hitboxes_video["card"] = (cx0, cy0, cx0 + card_dec.width, cy0 + card_dec.height)
         if self._preview_layer_drawable("title", t, cap) and card_meta.get("title"):
@@ -3133,7 +3786,7 @@ class CapCutLikeUi:
             return
         x0, y0, x1, y1 = self.video_to_canvas_rect(self.hitboxes_video[self.selected_element])
         self.canvas.create_rectangle(x0, y0, x1, y1, outline="#3FA9F5", width=2)
-        for key in ("card", "title", "dates", "subtitle", "watermark"):
+        for key in ("photo", "card", "title", "dates", "subtitle", "watermark"):
             if key not in self.hitboxes_video or key == self.selected_element:
                 continue
             rx0, ry0, rx1, ry1 = self.video_to_canvas_rect(self.hitboxes_video[key])
@@ -3165,7 +3818,7 @@ class CapCutLikeUi:
         if not point:
             return
         vx, vy = point
-        for key in ("watermark", "title", "dates", "subtitle", "card"):
+        for key in ("watermark", "title", "dates", "subtitle", "card", "photo"):
             if key not in self.hitboxes_video:
                 continue
             x0, y0, x1, y1 = self.hitboxes_video[key]
@@ -3205,6 +3858,9 @@ class CapCutLikeUi:
         elif self.selected_element == "card":
             self.settings.card_offset_x += dx_real
             self.settings.card_offset_y += dy_real
+        elif self.selected_element == "photo":
+            self.settings.photo_offset_x += dx_real
+            self.settings.photo_offset_y += dy_real
         self.drag_start = (event.x, event.y)
         self.sync_controls_from_settings()
         self.refresh_preview()
@@ -4004,6 +4660,46 @@ class CapCutLikeUi:
             return Path(extra).expanduser().resolve()
         return (Path.cwd() / "videos").resolve()
 
+    def _pick_video_bitrate_mbps(self) -> int:
+        """Битрейт на текущий ролик: либо фиксированный STUDIO_VIDEO_BITRATE_MBPS, либо рандом из диапазона."""
+        try:
+            lo = int(os.environ.get("STUDIO_VIDEO_BITRATE_MIN_MBPS", "0") or 0)
+            hi = int(os.environ.get("STUDIO_VIDEO_BITRATE_MAX_MBPS", "0") or 0)
+        except Exception:
+            lo = hi = 0
+        lo = max(0, min(20, lo))
+        hi = max(0, min(20, hi))
+        if lo > 0 and hi > 0:
+            lo, hi = min(lo, hi), max(lo, hi)
+            return int(random.randint(lo, hi))
+        try:
+            fixed = int(os.environ.get("STUDIO_VIDEO_BITRATE_MBPS", "0") or 0)
+        except Exception:
+            fixed = 0
+        return max(0, min(20, fixed))
+
+    def _pick_random_color_correction(self) -> dict[str, float]:
+        """Небольшая рандомная цветокоррекция на видео для уникализации каждого ролика."""
+        return {
+            "brightness": 1.0 + random.uniform(0.0, 0.03),
+            "contrast": 1.0 + random.uniform(0.0, 0.03),
+            "saturation": 1.0 + random.uniform(0.0, 0.05),
+            "sharpness": 1.0 + random.uniform(0.0, 0.05),
+        }
+
+    def _apply_frame_color_correction(self, frame_rgb: np.ndarray, cc: dict[str, float]) -> np.ndarray:
+        """Применяет цветокоррекцию к одному RGB кадру."""
+        arr = np.asarray(frame_rgb, dtype=np.uint8)
+        im = Image.fromarray(arr, mode="RGB")
+        try:
+            im = ImageEnhance.Brightness(im).enhance(float(cc.get("brightness", 1.0) or 1.0))
+            im = ImageEnhance.Contrast(im).enhance(float(cc.get("contrast", 1.0) or 1.0))
+            im = ImageEnhance.Color(im).enhance(float(cc.get("saturation", 1.0) or 1.0))
+            im = ImageEnhance.Sharpness(im).enhance(float(cc.get("sharpness", 1.0) or 1.0))
+        except Exception:
+            return arr
+        return np.asarray(im, dtype=np.uint8)
+
     def make_card_background_clip(self, media_path, dur, card_x, card_y):
         p = Path(media_path).expanduser()
         if not p.is_file():
@@ -4014,7 +4710,6 @@ class CapCutLikeUi:
         if suf in (".mp4", ".mov", ".avi", ".mkv", ".webm"):
             return VideoFileClip(str(p)).subclip(0, dur).resize((cw, ch)).set_position(pos)
         if suf == ".gif":
-            # GIF через кадры PIL; MoviePy ImageSequenceClip ждёт numpy (H,W,3), не PIL.Image.
             gif = Image.open(str(p))
             try:
                 frames_np = []
@@ -4030,9 +4725,13 @@ class CapCutLikeUi:
                     gif.close()
                 except Exception:
                     pass
-            total_ms = max(1, sum(durations))
-            fps = max(1, min(60, int(len(frames_np) / (total_ms / 1000))))
-            clip = ImageSequenceClip(frames_np, fps=fps)
+            frame_clips: list = []
+            for arr, d_ms in zip(frames_np, durations):
+                sec = max(0.02, float(d_ms) / 1000.0)
+                frame_clips.append(ImageClip(arr).set_duration(sec))
+            if not frame_clips:
+                return ImageClip(str(p)).set_duration(dur).resize((cw, ch)).set_position(pos)
+            clip = concatenate_videoclips(frame_clips, method="compose")
             if clip.duration < dur:
                 clip = clip.fx(vfx.loop, duration=dur)
             return clip.subclip(0, dur).set_position(pos)
@@ -4129,6 +4828,8 @@ class CapCutLikeUi:
     def generate_video_for(self, hero, image_path, summary_text, dates_text="", render_duration=None, card_title=None):
         self._reset_text_bg_random_picks()
         self._photo_anim_kind_override = None
+        if bool(getattr(self.settings, "photo_anim_random", False)):
+            self._photo_anim_kind_override = self._pick_random_photo_anim_kind()
         if _is_missing_bio_placeholder(summary_text):
             print(
                 "[SKIP] Рендер отменён: нет текста описания. Вставьте текст или нажмите «Случайный».",
@@ -4198,9 +4899,13 @@ class CapCutLikeUi:
 
         cw = int(self.settings.card_width)
         ch = int(self.settings.card_height)
+        pw = max(16, min(5000, int(self.settings.photo_width)))
+        ph = max(16, min(1920, int(self.settings.photo_height)))
         card_x = int((1080 - cw) / 2 + self.settings.card_offset_x)
         card_x = max(-cw + 60, min(1080 - 60, card_x))
-        card_y = self._layout_card_center_vertical(1920, ch)
+        card_y, photo_y = self._layout_card_photo_vertical(1920, ph, ch)
+        photo_x = int((1080 - pw) / 2 + self.settings.photo_offset_x)
+        photo_x = max(-pw + 40, min(1080 - 40, photo_x))
 
         dates_for_card = (dates_text or "").strip()
         card_parts, _card_decomp_meta = self.render_card_decomposed(
@@ -4250,6 +4955,33 @@ class CapCutLikeUi:
 
         bg_clip = self.build_main_bg_clip(dur, image_path)
         push_timed("background", bg_clip)
+
+        photo_path_for_scene = (image_path or "").strip() or (self.current_image_path or "").strip()
+        if photo_path_for_scene and self._timeline_segment_clamped("photo", dur) is not None and not bool(getattr(self.settings, "photo_hidden", False)):
+            _photo_cache = [None, None]
+
+            def _photo_rgba(tt: float) -> np.ndarray:
+                tt = float(tt)
+                if _photo_cache[0] != tt:
+                    pil_img, _ = self._render_scene_photo_layer_rgba(1080, 1920, tt, dur, title_line, photo_x, photo_y)
+                    _photo_cache[0] = tt
+                    _photo_cache[1] = np.asarray(pil_img, dtype=np.uint8)
+                return _photo_cache[1]
+
+            def make_photo_frame(tt):
+                arr = _photo_rgba(float(tt))
+                return np.ascontiguousarray(arr[:, :, :3])
+
+            def make_photo_mask(tt):
+                arr = _photo_rgba(float(tt))
+                return np.ascontiguousarray(arr[:, :, 3].astype(np.float32) / 255.0)
+
+            try:
+                mclip = VideoClip(make_frame=make_photo_mask, ismask=True, duration=float(dur)).set_fps(float(out_fps))
+                pclip = VideoClip(make_frame=make_photo_frame, duration=float(dur)).set_fps(float(out_fps)).set_mask(mclip)
+                push_timed("photo", pclip)
+            except Exception as ex:
+                print(f"[PHOTO] {ex!r}", flush=True)
 
         glow_seg = self._timeline_segment_clamped("glow", dur)
         if bool(getattr(self.settings, "glow_overlay_enabled", True)) and glow_seg is not None:
@@ -4406,9 +5138,15 @@ class CapCutLikeUi:
         clips_meta.sort(key=lambda x: (x[0], x[1]))
         clips = [c for _z, _s, c in clips_meta]
         final = CompositeVideoClip(clips, size=(1080, 1920)).set_duration(dur).subclip(0, dur)
+        cc = self._pick_random_color_correction()
+        final = final.fl_image(lambda fr: self._apply_frame_color_correction(fr, cc))
         if music:
-            audio_clip = AudioFileClip(music).subclip(0, dur).volumex(0.35).audio_fadeout(1.2)
+            vol_mul = 1.0 + random.uniform(-0.10, 0.10)
+            music_gain = max(0.01, 0.35 * vol_mul)
+            audio_clip = AudioFileClip(music).subclip(0, dur).volumex(music_gain).audio_fadeout(1.2)
             final = final.set_audio(audio_clip)
+        else:
+            music_gain = None
 
         prof = (os.environ.get("STUDIO_EXPORT_PROFILE", "") or "1080p").strip().lower()
         size_map = {"1080p": (1080, 1920), "720p": (720, 1280), "480p": (480, 854)}
@@ -4416,11 +5154,7 @@ class CapCutLikeUi:
         if (tw, th) != (1080, 1920):
             final = final.resize((tw, th))
         self._save_render_progress_thumb(final)
-        try:
-            br_mbps = int(os.environ.get("STUDIO_VIDEO_BITRATE_MBPS", "0") or 0)
-        except Exception:
-            br_mbps = 0
-        br_mbps = max(0, min(20, br_mbps))
+        br_mbps = self._pick_video_bitrate_mbps()
         write_kw = dict(
             fps=out_fps,
             codec="libx264",
@@ -4438,6 +5172,13 @@ class CapCutLikeUi:
             f"opacity={float(getattr(self.settings, 'glow_overlay_opacity', 0.38) or 0):.2f}",
             flush=True,
         )
+        print(
+            f"[FX] color_correction brightness={cc['brightness']:.4f} contrast={cc['contrast']:.4f} "
+            f"saturation={cc['saturation']:.4f} sharpness={cc['sharpness']:.4f}",
+            flush=True,
+        )
+        if music_gain is not None:
+            print(f"[FX] music_gain={music_gain:.4f}", flush=True)
         print(f"[RENDER] profile={prof or '1080p'} fps={out_fps} bitrate_mbps={br_mbps or 'default'}", flush=True)
         print("[RENDER] MoviePy progress below:", flush=True)
         try:
@@ -4454,14 +5195,14 @@ class CapCutLikeUi:
 
     def generate_current(self):
         self.apply_controls()
-        hero = self.hero_var.get().strip() or self.current_hero or "Гороскоп"
+        hero = self.hero_var.get().strip() or self.current_hero or "Политика"
         bio = self.bio_box.get("1.0", "end").strip()
         dates = self.dates_var.get().strip()
         if not bio.strip():
             if self.headless:
-                print("[ERROR] Нет описания (12 знаков). Нажмите «Случайный» или введите текст.")
+                print("[ERROR] Нет описания. Нажмите «Случайный» или введите текст.")
             else:
-                messagebox.showerror("Ошибка", "Нет описания. Нажмите «Случайный» или введите текст знаков.")
+                messagebox.showerror("Ошибка", "Нет описания. Нажмите «Случайный» или введите текст.")
             return
         print("[render] UI закрыт, запускаю генерацию текущего видео...")
         if not self.headless:
@@ -4496,7 +5237,7 @@ class CapCutLikeUi:
             print("\n" + "-" * 72)
             print(f"[BATCH] {i+1}/{count}")
             self.pick_random_horoscope()
-            hero = self.hero_var.get().strip() or self.current_hero or "Гороскоп"
+            hero = self.hero_var.get().strip() or self.current_hero or "Политика"
             summary = self.bio_box.get("1.0", "end").strip()
             dates = self.dates_var.get().strip()
             hl = self.headline_var.get().strip() if hasattr(self, "headline_var") else ""
@@ -4515,11 +5256,11 @@ class CapCutLikeUi:
 
     def studio_headless_render_current(self) -> int:
         self.apply_controls()
-        hero = self.hero_var.get().strip() or self.current_hero or "Гороскоп"
+        hero = self.hero_var.get().strip() or self.current_hero or "Политика"
         bio = self.bio_box.get("1.0", "end").strip()
         dates = self.dates_var.get().strip()
         if not bio.strip():
-            print("[ERROR] Нет описания (12 знаков). Заполните сцену или вызовите random_horoscope.")
+            print("[ERROR] Нет описания. Заполните сцену или вызовите random_horoscope.")
             return 2
         try:
             hl = self.headline_var.get().strip() if hasattr(self, "headline_var") else ""
@@ -4545,7 +5286,7 @@ class CapCutLikeUi:
             print("\n" + "-" * 72)
             print(f"[BATCH] {i+1}/{count}")
             self.pick_random_horoscope()
-            hero = self.hero_var.get().strip() or self.current_hero or "Гороскоп"
+            hero = self.hero_var.get().strip() or self.current_hero or "Политика"
             summary = self.bio_box.get("1.0", "end").strip()
             dates = self.dates_var.get().strip()
             hl = self.headline_var.get().strip() if hasattr(self, "headline_var") else ""
@@ -4580,7 +5321,7 @@ class CapCutLikeUi:
             defaultextension=".json",
             filetypes=[("JSON пресет", "*.json"), ("Все файлы", "*.*")],
             initialdir=str(presets_dir),
-            initialfile="horoscope_studio_preset.json",
+            initialfile="politics_studio_preset.json",
         )
         if not path:
             return
@@ -4725,6 +5466,9 @@ class CapCutLikeUi:
         if hasattr(self, "topics_box"):
             self.topics_box.delete("1.0", "end")
             self.topics_box.insert("1.0", self.settings.headline_topics)
+        if hasattr(self, "summary_prompt_box"):
+            self.summary_prompt_box.delete("1.0", "end")
+            self.summary_prompt_box.insert("1.0", getattr(self.settings, "summary_prompt", ""))
         if hasattr(self, "timeline"):
             self.timeline.configure(to=max(0.1, self.settings.duration_max))
         self.current_time = min(self.current_time, self.settings.duration_max)
@@ -4784,6 +5528,9 @@ class CapCutLikeUi:
         if hasattr(self, "topics_box"):
             self.topics_box.delete("1.0", "end")
             self.topics_box.insert("1.0", self.settings.headline_topics)
+        if hasattr(self, "summary_prompt_box"):
+            self.summary_prompt_box.delete("1.0", "end")
+            self.summary_prompt_box.insert("1.0", getattr(self.settings, "summary_prompt", ""))
         self.timeline.configure(to=max(0.1, self.settings.duration_max))
         self._invalidate_element_inspector()
         self.refresh_preview()

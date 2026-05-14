@@ -6,14 +6,15 @@ Commands (one JSON object per line on stdin):
   {"cmd":"shutdown"}
   {"cmd":"sync","settings":{...},"scene":{...}}
   {"cmd":"preview","settings":{...},"scene":{...},"t":0.5,"meta":true,"preview_max_w":640}  -> png base64 + hitboxes (координаты всегда 1080×1920; PNG может быть уже)
-  {"cmd":"random_politician"} / {"cmd":"random_horoscope"}  — тема + 12 знаков
-  {"cmd":"resummarize"}  — снова перемешать знаки в описании
-  {"cmd":"generate_headline"}  — случайная тема как заголовок
+  {"cmd":"random_politician"} / {"cmd":"random_horoscope"}  — случайный заголовок + описание + media из photos/
+  {"cmd":"resummarize"}  — обновить описание
+  {"cmd":"generate_headline"}  — заголовок по текущему описанию через AI
   {"cmd":"merge_text_style","element":"title","style":{...}}
   {"cmd":"pick_font_file"}  -> {"ok":true,"path":"C:\\...\\font.ttf"} (диалог tk на машине с UI)
   {"cmd":"pick_file","title":"...","filetypes":[["Images","*.png *.jpg"]]}  -> путь к файлу
   {"cmd":"pick_folder","title":"..."}  -> путь к папке
-  {"cmd":"save_preset_file","settings":{...}}  -> диалог «Сохранить» с initialdir presets/, {"ok":true,"path":"..."} или {"ok":false,"cancelled":true}
+  {"cmd":"save_preset_file","settings":{...}}  -> legacy: сохранить голый JSON настроек
+  {"cmd":"save_preset_file","payload":{...}}   -> сохранить произвольный JSON (например snapshot settings+scene)
 
 Responses: one JSON object per line on stdout.
 """
@@ -213,9 +214,11 @@ def main() -> int:
                             pass
                     respond({"ok": True, "path": str(path or "").strip()})
             elif cmd == "save_preset_file":
+                payload = msg.get("payload")
                 settings = msg.get("settings")
-                if not isinstance(settings, dict):
-                    respond({"ok": False, "error": "settings dict required"})
+                obj = payload if isinstance(payload, dict) else settings
+                if not isinstance(obj, dict):
+                    respond({"ok": False, "error": "payload/settings dict required"})
                 else:
                     from tkinter import filedialog
 
@@ -237,7 +240,7 @@ def main() -> int:
                             defaultextension=".json",
                             filetypes=[("JSON пресет", "*.json"), ("Все файлы", "*.*")],
                             initialdir=str(presets_dir),
-                            initialfile="horoscope_studio_preset.json",
+                            initialfile="politics_studio_preset.json",
                         )
                         try:
                             root.attributes("-topmost", False)
@@ -248,7 +251,7 @@ def main() -> int:
                         else:
                             try:
                                 Path(path).expanduser().write_text(
-                                    json.dumps(settings, ensure_ascii=False, indent=2),
+                                    json.dumps(obj, ensure_ascii=False, indent=2),
                                     encoding="utf-8",
                                 )
                                 respond({"ok": True, "path": str(path)})

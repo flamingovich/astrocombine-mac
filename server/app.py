@@ -40,6 +40,8 @@ class RenderJob(BaseModel):
     save_folder: Optional[str] = None  # абсолютный путь ИЛИ имя подпапки Videos/…
     resolution: Optional[str] = None  # 1080p | 720p | 480p
     video_bitrate_mbps: Optional[int] = None  # 3…10
+    video_bitrate_min_mbps: Optional[int] = None  # 1…20
+    video_bitrate_max_mbps: Optional[int] = None  # 1…20
     fps: Optional[int] = None  # 15, 24, 30, 50, 60
     duration_min_sec: Optional[float] = None
     duration_max_sec: Optional[float] = None
@@ -57,7 +59,7 @@ async def lifespan(_app: FastAPI):
     bridge.stop()
 
 
-app = FastAPI(title="Horoscope Studio API", lifespan=lifespan)
+app = FastAPI(title="Politics Studio API", lifespan=lifespan)
 MAIN_LOOP: Optional[asyncio.AbstractEventLoop] = None
 
 app.add_middleware(
@@ -256,13 +258,40 @@ def health() -> Dict[str, Any]:
 _FONT_EXTS = frozenset({".ttf", ".otf", ".ttc"})
 
 
+def _font_family_style_from_filename(path: Path) -> tuple[str, str]:
+    """
+    Эвристика: выделяем family/style из имени файла.
+    Пример: "Arial-BoldItalicMT" -> ("Arial", "Bold Italic MT")
+    """
+    stem = str(path.stem or "").strip()
+    if not stem:
+        return (path.name, "Regular")
+    stem = re.sub(r"\s+", " ", stem)
+    # Частый кейс у системных шрифтов: Family-Style
+    if "-" in stem:
+        family_raw, style_raw = stem.split("-", 1)
+    else:
+        family_raw, style_raw = stem, ""
+
+    family = re.sub(r"[_]+", " ", family_raw).strip() or family_raw
+    style_raw = re.sub(r"[_]+", " ", style_raw).strip()
+    if style_raw:
+        # Разбиваем CamelCase в style, чтобы "BoldItalic" => "Bold Italic"
+        style = re.sub(r"([a-z])([A-Z])", r"\1 \2", style_raw).strip()
+    else:
+        style = "Regular"
+    return (family, style)
+
+
 @app.get("/api/system-fonts")
 def system_fonts() -> Dict[str, Any]:
-    """Список шрифтов для выпадающего списка в веб-UI: системная папка + fonts/ проекта."""
+    """Список шрифтов для выпадающего списка в веб-UI: системные + fonts/ проекта."""
     items: list[Dict[str, str]] = []
     seen: set[str] = set()
 
-    def push(path: Path, label: str | None = None) -> None:
+    def push(path: Path, source: str, force_rel: bool = False, rel_value: str | None = None) -> None:
+        if not path.is_file() or path.suffix.lower() not in _FONT_EXTS:
+            return
         try:
             key = str(path.resolve())
         except Exception:
@@ -270,36 +299,41 @@ def system_fonts() -> Dict[str, Any]:
         if key.lower() in seen:
             return
         seen.add(key.lower())
-        lab = label or path.stem
-        items.append({"path": key, "label": f"{lab} ({path.name})"})
+        family, style = _font_family_style_from_filename(path)
+        val = (str(rel_value or "").replace("\\", "/").strip() if force_rel else key) or key
+        items.append({"path": val, "label": f"{family} — {style} [{source}]"})
+
+    def scan_dir(d: Path, source: str, recursive: bool = False, force_rel: bool = False) -> None:
+        if not d.is_dir():
+            return
+        it = d.rglob("*") if recursive else d.iterdir()
+        for p in sorted(it, key=lambda x: x.name.lower()):
+            if p.is_file() and p.suffix.lower() in _FONT_EXTS:
+                push(p, source, force_rel=force_rel)
 
     custom = (os.environ.get("STUDIO_SYSTEM_FONTS_DIR") or "").strip()
     if custom:
-        d = Path(custom).expanduser()
-        if d.is_dir():
-            for p in sorted(d.iterdir(), key=lambda x: x.name.lower()):
-                if p.is_file() and p.suffix.lower() in _FONT_EXTS:
-                    push(p)
+        scan_dir(Path(custom).expanduser(), "Custom", recursive=True)
     else:
-        win = os.environ.get("WINDIR", r"C:\Windows")
-        fonts_dir = Path(win) / "Fonts"
-        if fonts_dir.is_dir():
-            for p in fonts_dir.iterdir():
-                if p.is_file() and p.suffix.lower() in _FONT_EXTS:
-                    push(p)
+        sys_name = platform.system()
+        if sys_name == "Darwin":
+            scan_dir(Path("/System/Library/Fonts"), "macOS System", recursive=True)
+            scan_dir(Path("/Library/Fonts"), "macOS Library", recursive=True)
+            scan_dir(Path.home() / "Library" / "Fonts", "macOS User", recursive=True)
+        elif sys_name == "Windows":
+            win = os.environ.get("WINDIR", r"C:\Windows")
+            scan_dir(Path(win) / "Fonts", "Windows", recursive=True)
+        else:
+            scan_dir(Path("/usr/share/fonts"), "Linux System", recursive=True)
+            scan_dir(Path("/usr/local/share/fonts"), "Linux Local", recursive=True)
+            scan_dir(Path.home() / ".local" / "share" / "fonts", "Linux User", recursive=True)
 
     proj_fonts = ROOT / "fonts"
     if proj_fonts.is_dir():
         for p in sorted(proj_fonts.iterdir(), key=lambda x: x.name.lower()):
             if p.is_file() and p.suffix.lower() in _FONT_EXTS:
-                rel = "fonts/" + p.name.replace("\\", "/")
-                try:
-                    rel_key = str((ROOT / rel.replace("/", os.sep)).resolve())
-                except Exception:
-                    rel_key = str(ROOT / p.name)
-                if rel_key.lower() not in seen:
-                    seen.add(rel_key.lower())
-                    items.append({"path": rel, "label": f"{p.stem} ({rel})"})
+                rel = Path("fonts") / p.name
+                push(ROOT / rel, "Project", force_rel=True, rel_value=str(rel))
 
     items.sort(key=lambda x: x["label"].lower())
     return {"fonts": items}
@@ -381,6 +415,8 @@ def start_render(job: RenderJob) -> Any:
         env.pop("STUDIO_VIDEOS_SUBFOLDER", None)
         env.pop("STUDIO_DURATION_MIN", None)
         env.pop("STUDIO_DURATION_MAX", None)
+        env.pop("STUDIO_VIDEO_BITRATE_MIN_MBPS", None)
+        env.pop("STUDIO_VIDEO_BITRATE_MAX_MBPS", None)
         if save_folder:
             p = Path(save_folder)
             if p.is_absolute() or (len(save_folder) > 1 and save_folder[1] == ":"):
@@ -397,6 +433,12 @@ def start_render(job: RenderJob) -> Any:
             env["STUDIO_FPS"] = str(int(job.fps))
         if job.video_bitrate_mbps is not None:
             env["STUDIO_VIDEO_BITRATE_MBPS"] = str(max(1, min(20, int(job.video_bitrate_mbps))))
+        if job.video_bitrate_min_mbps is not None and job.video_bitrate_max_mbps is not None:
+            lo = max(1, min(20, int(job.video_bitrate_min_mbps)))
+            hi = max(1, min(20, int(job.video_bitrate_max_mbps)))
+            lo, hi = min(lo, hi), max(lo, hi)
+            env["STUDIO_VIDEO_BITRATE_MIN_MBPS"] = str(lo)
+            env["STUDIO_VIDEO_BITRATE_MAX_MBPS"] = str(hi)
         if job.duration_min_sec is not None and job.duration_max_sec is not None:
             try:
                 lo = float(job.duration_min_sec)
